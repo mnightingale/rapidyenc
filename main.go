@@ -1,17 +1,14 @@
 package main
 
-// #include <stdlib.h>
-// void encoder_init();
-// void decoder_init();
-// void crc_init();
-// size_t do_decode(int isRaw, unsigned char const* src, unsigned char* dest, size_t len, int flags);
+/*
+#include "yencode_wrapper.h"
+*/
 import "C"
 import "unsafe"
+import "fmt"
 
 func main() {
-	C.encoder_init()
-	C.decoder_init()
-	C.crc_init() // Fails here currently
+	C.init()
 
 	src := []byte{
 		0x2a, 0x2a, 0x2a, 0x2a, 0x2a, 0x2a, 0x2a, 0x2a, 0x2a, 0x2a, 0x2a, 0x2a, 0x2a, 0x2a, 0x2a, 0x2a,
@@ -26,14 +23,16 @@ func main() {
 
 	dst := make([]byte, len(src))
 
+	state := new(C.YencDecoderState);
+
 	result := C.do_decode(
 		0,
 		((*C.uchar)(unsafe.Pointer(&src[0]))),
 		((*C.uchar)(unsafe.Pointer(&dst[0]))),
 		C.size_t(len(src)),
-		0,
+		state,
 	)
 
-	println(result)
-	println(dst)
+	fmt.Println("Result length:", result)
+	fmt.Println("Decoded:", dst)
 }
