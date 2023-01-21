@@ -1,15 +1,19 @@
 package main
 
 /*
-#include "yencode_wrapper.h"
+#include "rapidyenc/rapidyenc.h"
 */
 import "C"
-import "unsafe"
-import "fmt"
+import (
+	"fmt"
+	"unsafe"
+)
+
+func init() {
+	C.rapidyenc_decode_init()
+}
 
 func main() {
-	C.init()
-
 	src := []byte{
 		0x2a, 0x2a, 0x2a, 0x2a, 0x2a, 0x2a, 0x2a, 0x2a, 0x2a, 0x2a, 0x2a, 0x2a, 0x2a, 0x2a, 0x2a, 0x2a,
 		0x2a, 0x2a, 0x2a, 0x2a, 0x2a, 0x2a, 0x2a, 0x2a, 0x2a, 0x2a, 0x2a, 0x2a, 0x2a, 0x2a, 0x2a, 0x2a,
@@ -23,14 +27,10 @@ func main() {
 
 	dst := make([]byte, len(src))
 
-	state := new(C.YencDecoderState);
-
-	result := C.do_decode(
-		0,
-		((*C.uchar)(unsafe.Pointer(&src[0]))),
-		((*C.uchar)(unsafe.Pointer(&dst[0]))),
-		C.size_t(len(src)),
-		state,
+	result := C.rapidyenc_decode(
+		unsafe.Pointer(&src[0]),
+		unsafe.Pointer(&dst[0]),
+		C.ulong(len(src)),
 	)
 
 	fmt.Println("Result length:", result)

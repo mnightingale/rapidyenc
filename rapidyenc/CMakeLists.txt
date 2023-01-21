@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 2.8.9...3.22)
-project(go-rapidyenc)
+project(rapidyenc)
 
 option(BUILD_NATIVE "Optimise for and target only the build host's CPU; this build may not be re-distributable" OFF)
 option(DISABLE_AVX256 "Disable the use of 256-bit AVX instructions on x86 processors" OFF)
@@ -7,10 +7,6 @@ option(DISABLE_AVX256 "Disable the use of 256-bit AVX instructions on x86 proces
 include(CheckCXXCompilerFlag)
 include(CheckIncludeFileCXX)
 include(CheckCXXSymbolExists)
-
-set(CMAKE_MACOSX_RPATH OFF)
-set(CMAKE_SHARED_LIBRARY_PREFIX "")
-set(CMAKE_SHARED_LIBRARY_SUFFIX ".syso")
 
 if(NOT CMAKE_BUILD_TYPE)
 	set(CMAKE_BUILD_TYPE Release)
@@ -62,8 +58,8 @@ else()
 	set(DECODER_NEON_FILE decoder_neon.cc)
 endif()
 
-set(SRC_DIR ./rapidyenc/src)
-set(CRCUTIL_DIR ./rapidyenc/crcutil-1.0)
+set(SRC_DIR ./src)
+set(CRCUTIL_DIR ./crcutil-1.0)
 set(RAPIDYENC_SOURCES
 	${SRC_DIR}/platform.cc
 	${SRC_DIR}/encoder.cc
@@ -171,7 +167,17 @@ else()
 endif()
 
 
-add_library(rapidyenc_shared SHARED $<TARGET_OBJECTS:rapidyenc> ./rapidyenc/rapidyenc.c)
+add_library(rapidyenc_shared SHARED $<TARGET_OBJECTS:rapidyenc> ./rapidyenc.c)
 target_compile_definitions(rapidyenc_shared PUBLIC BUILD_SHARED=1)
+add_library(rapidyenc_static STATIC $<TARGET_OBJECTS:rapidyenc> ./rapidyenc.c)
 # suggestion from https://stackoverflow.com/a/67027398/459150
+set_target_properties(rapidyenc_static PROPERTIES OUTPUT_NAME rapidyenc ARCHIVE_OUTPUT_DIRECTORY rapidyenc_static)
 set_target_properties(rapidyenc_shared PROPERTIES OUTPUT_NAME rapidyenc ARCHIVE_OUTPUT_DIRECTORY rapidyenc_shared)
+
+
+# binaries
+add_executable(rapidyenc_cli tool/cli.c)
+target_link_libraries(rapidyenc_cli rapidyenc_static)
+add_executable(rapidyenc_bench tool/bench.cc)
+target_link_libraries(rapidyenc_bench rapidyenc_static)
+target_compile_features(rapidyenc_bench PUBLIC cxx_std_11)
