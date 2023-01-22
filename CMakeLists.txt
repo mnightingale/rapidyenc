@@ -9,8 +9,6 @@ include(CheckIncludeFileCXX)
 include(CheckCXXSymbolExists)
 
 set(CMAKE_MACOSX_RPATH OFF)
-set(CMAKE_SHARED_LIBRARY_PREFIX "")
-set(CMAKE_SHARED_LIBRARY_SUFFIX ".syso")
 
 if(NOT CMAKE_BUILD_TYPE)
 	set(CMAKE_BUILD_TYPE Release)
@@ -174,4 +172,5 @@ endif()
 add_library(rapidyenc_shared SHARED $<TARGET_OBJECTS:rapidyenc> ./rapidyenc/rapidyenc.c)
 target_compile_definitions(rapidyenc_shared PUBLIC BUILD_SHARED=1)
 # suggestion from https://stackoverflow.com/a/67027398/459150
-set_target_properties(rapidyenc_shared PROPERTIES OUTPUT_NAME rapidyenc ARCHIVE_OUTPUT_DIRECTORY rapidyenc_shared)
+set_target_properties(rapidyenc_shared PROPERTIES OUTPUT_NAME rapidyenc ARCHIVE_OUTPUT_DIRECTORY $<0:>)
+set_target_properties(rapidyenc_shared PROPERTIES OUTPUT_NAME rapidyenc RUNTIME_OUTPUT_DIRECTORY $<0:>)
