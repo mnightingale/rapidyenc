@@ -3,6 +3,7 @@ package encoder
 /*
 #cgo CFLAGS: -I${SRCDIR}/../rapidyenc
 #cgo LDFLAGS: -L${SRCDIR}/../ -lrapidyenc
+#cgo darwin LDFLAGS: -L${SRCDIR}/../lib -lrapidyenc
 #include "rapidyenc.h"
 */
 import "C"
