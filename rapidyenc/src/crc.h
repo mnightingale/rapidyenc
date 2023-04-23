@@ -14,6 +14,9 @@ extern int _crc32_isa;
 
 uint32_t do_crc32_combine(uint32_t crc1, const uint32_t crc2, size_t len2);
 uint32_t do_crc32_zeros(uint32_t crc1, size_t len);
+uint32_t do_crc32_zero_unpad(uint32_t crc1, size_t len);
+uint32_t do_crc32_xpow8n(size_t n);
+uint32_t do_crc32_multiply(uint32_t crc1, uint32_t crc2);
 void crc_init();
 static inline int crc32_isa_level() {
 	return _crc32_isa;

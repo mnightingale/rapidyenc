@@ -97,6 +97,15 @@ uint32_t rapidyenc_crc_combine(uint32_t crc1, const uint32_t crc2, size_t length
 uint32_t rapidyenc_crc_zeros(uint32_t init_crc, size_t length) {
 	return do_crc32_zeros(init_crc, length);
 }
+uint32_t rapidyenc_crc_zero_unpad(uint32_t init_crc, size_t length) {
+	return do_crc32_zero_unpad(init_crc, length);
+}
+uint32_t rapidyenc_crc_xpow8n(size_t n) {
+    return do_crc32_xpow8n(n);
+}
+uint32_t rapidyenc_crc_multiply(uint32_t crc1, uint32_t crc2) {
+    return do_crc32_multiply(crc1, crc2);
+}
 
 int rapidyenc_crc_kernel() {
 	return crc32_isa_level();

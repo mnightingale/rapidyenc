@@ -93,6 +93,24 @@ uint32_t do_crc32_zeros(uint32_t crc1, size_t len) {
 	return (uint32_t)crc_;
 }
 
+uint32_t do_crc32_zero_unpad(uint32_t crc1, size_t len) {
+	crcutil_interface::UINT64 crc_ = crc1;
+	crc->ZeroUnpad(len, &crc_);
+	return (uint32_t)crc_;
+}
+
+uint32_t do_crc32_xpow8n(size_t n) {
+    crcutil_interface::UINT64 n_ = n & 0xffffffff;
+    crc->Xpow8N(&n_);
+	return (uint32_t)n_;
+}
+
+uint32_t do_crc32_multiply(uint32_t crc1, uint32_t crc2) {
+	crcutil_interface::UINT64 crc1_ = crc1, crc2_ = crc2;
+	crc->Multiply(crc2_, &crc1_);
+	return (uint32_t)crc1_;
+}
+
 void crc_clmul_set_funcs();
 void crc_clmul256_set_funcs();
 void crc_arm_set_funcs();

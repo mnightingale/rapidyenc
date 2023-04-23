@@ -176,6 +176,12 @@ RAPIDYENC_API uint32_t rapidyenc_crc_combine(uint32_t crc1, const uint32_t crc2,
  */
 RAPIDYENC_API uint32_t rapidyenc_crc_zeros(uint32_t init_crc, size_t length);
 
+RAPIDYENC_API uint32_t rapidyenc_crc_zero_unpad(uint32_t init_crc, size_t length);
+
+RAPIDYENC_API uint32_t rapidyenc_crc_xpow8n(size_t n);
+
+RAPIDYENC_API uint32_t rapidyenc_crc_multiply(uint32_t crc1, uint32_t crc2);
+
 /**
  * Returns the kernel/ISA level used for CRC32 computation
  * Values correspond with RYKERN_* definitions above
