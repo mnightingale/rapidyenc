@@ -100,7 +100,7 @@ uint32_t do_crc32_zero_unpad(uint32_t crc1, size_t len) {
 }
 
 uint32_t do_crc32_xpow8n(size_t n) {
-    crcutil_interface::UINT64 n_ = n & 0xffffffff;
+    crcutil_interface::UINT64 n_ = n;
     crc->Xpow8N(&n_);
 	return (uint32_t)n_;
 }
