@@ -3,7 +3,6 @@ package encoder
 /*
 #cgo CFLAGS: -I${SRCDIR}/../rapidyenc
 #cgo LDFLAGS: -L${SRCDIR}/../ -lrapidyenc
-#cgo darwin LDFLAGS: -L${SRCDIR}/../ -lrapidyenc
 #include "rapidyenc.h"
 */
 import "C"
@@ -12,15 +11,11 @@ import (
 )
 
 func init() {
-	C.rapidyenc_encode_init()
-}
-
-func MaxLength(length int, line_size int) uint {
-	return uint(C.rapidyenc_encode_max_length(C.size_t(length), C.int(line_size)))
+	encodeInit()
 }
 
 type Encoder struct {
-	LineLength int
+	LineLength int32
 }
 
 func NewEncoder() *Encoder {
@@ -30,16 +25,25 @@ func NewEncoder() *Encoder {
 }
 
 func (e *Encoder) Encode(src []byte) ([]byte, error) {
-	// RAPIDYENC_API size_t rapidyenc_encode(const void* __restrict src, void* __restrict dest, size_t src_length);
-	// RAPIDYENC_API size_t rapidyenc_encode_ex(int line_size, int* column, const void* __restrict src, void* __restrict dest, size_t src_length, int is_end);
-
 	dst := make([]byte, MaxLength(len(src), e.LineLength))
 
-	encoded_size := C.rapidyenc_encode(
+	length := encode(
 		unsafe.Pointer(&src[0]),
 		unsafe.Pointer(&dst[0]),
-		C.size_t(len(src)),
+		len(src),
 	)
 
-	return dst[:encoded_size], nil
+	return dst[:length], nil
 }
+
+//go:linkname encodeInit rapidyenc_encode_init
+//go:noescape
+func encodeInit()
+
+//go:linkname encode rapidyenc_encode
+//go:noescape
+func encode(src, dest unsafe.Pointer, size int) int
+
+//go:linkname MaxLength rapidyenc_encode_max_length
+//go:noescape
+func MaxLength(length int, lineLength int32) int
