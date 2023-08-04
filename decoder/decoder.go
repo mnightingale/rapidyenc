@@ -440,7 +440,7 @@ func decodeIncremental(dst, src []byte, state *State) (int, int, bool) {
 		(*unsafe.Pointer)(unsafe.Pointer(&srcPointer)),
 		(*unsafe.Pointer)(unsafe.Pointer(&dstPointer)),
 		C.size_t(len(src)),
-		(*C.RapidYencDecoderState)(unsafe.Pointer(&state)),
+		(*C.RapidYencDecoderState)(unsafe.Pointer(state)),
 	)
 
 	nSrc := int(srcPointer - uintptr(unsafe.Pointer(&src[0])))
