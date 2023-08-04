@@ -11,11 +11,15 @@ import (
 )
 
 func init() {
-	encodeInit()
+	C.rapidyenc_encode_init()
+}
+
+func MaxLength(length, lineLength int) int {
+	return int(C.rapidyenc_encode_max_length(C.size_t(length), C.int(lineLength)))
 }
 
 type Encoder struct {
-	LineLength int32
+	LineLength int
 }
 
 func NewEncoder() *Encoder {
@@ -27,23 +31,11 @@ func NewEncoder() *Encoder {
 func (e *Encoder) Encode(src []byte) ([]byte, error) {
 	dst := make([]byte, MaxLength(len(src), e.LineLength))
 
-	length := encode(
+	length := C.rapidyenc_encode(
 		unsafe.Pointer(&src[0]),
 		unsafe.Pointer(&dst[0]),
-		len(src),
+		C.size_t(len(src)),
 	)
 
 	return dst[:length], nil
 }
-
-//go:linkname encodeInit rapidyenc_encode_init
-//go:noescape
-func encodeInit()
-
-//go:linkname encode rapidyenc_encode
-//go:noescape
-func encode(src, dest unsafe.Pointer, size int) int
-
-//go:linkname MaxLength rapidyenc_encode_max_length
-//go:noescape
-func MaxLength(length int, lineLength int32) int

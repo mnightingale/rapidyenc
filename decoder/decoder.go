@@ -132,7 +132,7 @@ func (d *Decoder) Read(p []byte) (int, error) {
 	}
 }
 
-const defaultBufSize = 4096
+const defaultBufSize = 4096 * 8
 const defaultBodySize = 4096
 const maxBodySize = 10 * 1024 * 1024 // maximum size to initially extend output buffer to
 
@@ -397,32 +397,30 @@ func extractCRC(data, substr []byte) (uint32, error) {
 }
 
 func init() {
-	decodeInit()
+	C.rapidyenc_decode_init()
 }
 
 // State is the current decoder state, for incremental decoding
 // The values here refer to the previously seen characters in the stream, which influence how some sequences need to be handled
 // The shorthands represent:
 // CR (\r), LF (\n), EQ (=), DT (.)
-type State uint32
+type State int
 
 const (
-	StateCRLF State = iota
-	StateEQ
-	StateCR
-	StateNone
-	StateCRLFDT
-	StateCRLFDTCR
-	StateCRLFEQ // may actually be "\r\n.=" in raw decoder
+	StateCRLF     State = C.RYDEC_STATE_CRLF
+	StateEQ       State = C.RYDEC_STATE_EQ
+	StateCR       State = C.RYDEC_STATE_CR
+	StateNone     State = C.RYDEC_STATE_NONE
+	StateCRLFDT   State = C.RYDEC_STATE_CRLFDT
+	StateCRLFDTCR State = C.RYDEC_STATE_CRLFDTCR
+	StateCRLFEQ   State = C.RYDEC_STATE_CRLFEQ // may actually be "\r\n.=" in raw decoder
 )
 
 // end is the state for incremental decoding, whether the end of the yEnc data was reached
-type end uint32
-
 const (
-	endNone    end = iota // end not reached
-	endControl            // \r\n=y sequence found, src points to byte after 'y'
-	endArticle            // \r\n.\r\n sequence found, src points to byte after last '\n'
+	endNone    = C.RYDEC_END_NONE    // end not reached
+	endControl = C.RYDEC_END_CONTROL // \r\n=y sequence found, src points to byte after 'y'
+	endArticle = C.RYDEC_END_ARTICLE // \r\n.\r\n sequence found, src points to byte after last '\n'
 )
 
 var (
@@ -435,18 +433,18 @@ func decodeIncremental(dst, src []byte, state *State) (int, int, bool) {
 		panic(ErrDestinationTooSmall)
 	}
 
-	dstPointer := unsafe.Pointer(&dst[0])
-	srcPointer := unsafe.Pointer(&src[0])
+	srcPointer := uintptr(unsafe.Pointer(&src[0]))
+	dstPointer := uintptr(unsafe.Pointer(&dst[0]))
 
-	end := doDecodeIncremental(
-		&srcPointer,
-		&dstPointer,
-		len(src),
-		state,
+	end := C.rapidyenc_decode_incremental(
+		(*unsafe.Pointer)(unsafe.Pointer(&srcPointer)),
+		(*unsafe.Pointer)(unsafe.Pointer(&dstPointer)),
+		C.size_t(len(src)),
+		(*C.RapidYencDecoderState)(unsafe.Pointer(&state)),
 	)
 
-	nSrc := int(uintptr(srcPointer) - uintptr(unsafe.Pointer(&src[0])))
-	nDst := int(uintptr(dstPointer) - uintptr(unsafe.Pointer(&dst[0])))
+	nSrc := int(srcPointer - uintptr(unsafe.Pointer(&src[0])))
+	nDst := int(dstPointer - uintptr(unsafe.Pointer(&dst[0])))
 
 	if end == endControl {
 		nSrc -= len("=y")
@@ -456,11 +454,3 @@ func decodeIncremental(dst, src []byte, state *State) (int, int, bool) {
 
 	return nSrc, nDst, end != endNone
 }
-
-//go:linkname decodeInit rapidyenc_decode_init
-//go:noescape
-func decodeInit()
-
-//go:linkname doDecodeIncremental rapidyenc_decode_incremental
-//go:noescape
-func doDecodeIncremental(src, dst *unsafe.Pointer, size int, state *State) end
