@@ -11,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"golang.org/x/text/transform"
+	"hash"
 	"hash/crc32"
 	"io"
 	"strconv"
@@ -150,7 +151,7 @@ func (d *Decoder) Transform(dst, src []byte, atEOF bool) (nDst, nSrc int, err er
 	if d.body && d.format == FormatYenc {
 		ns, nd, end := decodeIncremental(dst, src, &d.state)
 		if nd > 0 {
-			d.outCrc = crc32.Update(d.outCrc, crc32.IEEETable, dst[nDst:nDst+nd])
+			d.outCrc.Write(dst[nDst : nDst+nd])
 			d.outSize += int64(nd)
 			nDst += nd
 		}
@@ -175,7 +176,7 @@ func (d *Decoder) Transform(dst, src []byte, atEOF bool) (nDst, nSrc int, err er
 				err = ErrDataIncomplete
 			} else if (!d.part && d.size != d.endSize) || (d.endSize != d.outSize) {
 				err = ErrSizeMismatch
-			} else if d.crc && d.expectedCrc != d.outCrc {
+			} else if d.crc && d.expectedCrc != d.outCrc.Sum32() {
 				err = ErrCrcMismatch
 			} else {
 				err = io.EOF
@@ -200,7 +201,7 @@ func (d *Decoder) Transform(dst, src []byte, atEOF bool) (nDst, nSrc int, err er
 			if d.body {
 				ns, nd, end := decodeIncremental(dst[nDst:], src[nSrc:], &d.state)
 				if nd > 0 {
-					d.outCrc = crc32.Update(d.outCrc, crc32.IEEETable, dst[nDst:nDst+nd])
+					d.outCrc.Write(dst[nDst : nDst+nd])
 					d.outSize += int64(nd)
 					nDst += nd
 				}
@@ -234,7 +235,7 @@ func (d *Decoder) Reset() {
 	d.endSize = 0
 	d.outSize = 0
 	d.expectedCrc = 0
-	d.outCrc = 0
+	d.outCrc = crc32.New(crc32.IEEETable)
 	d.filename = ""
 
 	d.err = nil
@@ -257,7 +258,7 @@ type Decode struct {
 	endSize     int64
 	outSize     int64
 	expectedCrc uint32
-	outCrc      uint32
+	outCrc      hash.Hash32
 	filename    string
 }
 
@@ -278,7 +279,7 @@ func (d *Decode) Filesize() int64 {
 }
 
 func (d *Decode) CRC32() uint32 {
-	return d.outCrc
+	return d.outCrc.Sum32()
 }
 
 func (d *Decode) processYenc(line []byte) {

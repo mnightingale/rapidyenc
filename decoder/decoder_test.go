@@ -5,9 +5,9 @@ import (
 	"bytes"
 	"crypto/rand"
 	"fmt"
-	"github.com/mnightingale/go-rapidyenc/crc32"
 	"github.com/mnightingale/go-rapidyenc/encoder"
 	"github.com/stretchr/testify/require"
+	"hash/crc32"
 	"io"
 	"testing"
 )
@@ -124,7 +124,7 @@ func body(raw []byte) []byte {
 	fmt.Fprintf(w, "=ypart begin=%d end=%d\r\n", 1, len(raw)+1)
 	w.Write(encoded)
 	w.Write([]byte("\r\n"))
-	fmt.Fprintf(w, "=yend size=%d part=%d pcrc32=%08x\r\n", len(raw), 1, crc32.Checksum(raw))
+	fmt.Fprintf(w, "=yend size=%d part=%d pcrc32=%08x\r\n", len(raw), 1, crc32.ChecksumIEEE(raw))
 	fmt.Fprintf(w, ".\r\n")
 
 	err := w.Flush()
