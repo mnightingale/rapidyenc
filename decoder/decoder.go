@@ -10,8 +10,8 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
-	"github.com/mnightingale/go-rapidyenc/crc32"
 	"golang.org/x/text/transform"
+	"hash/crc32"
 	"io"
 	"strconv"
 	"unsafe"
@@ -150,7 +150,7 @@ func (d *Decoder) Transform(dst, src []byte, atEOF bool) (nDst, nSrc int, err er
 	if d.body && d.format == FormatYenc {
 		ns, nd, end := decodeIncremental(dst, src, &d.state)
 		if nd > 0 {
-			d.outCrc = crc32.Update(d.outCrc, dst[nDst:nDst+nd])
+			d.outCrc = crc32.Update(d.outCrc, crc32.IEEETable, dst[nDst:nDst+nd])
 			d.outSize += int64(nd)
 			nDst += nd
 		}
@@ -200,7 +200,7 @@ func (d *Decoder) Transform(dst, src []byte, atEOF bool) (nDst, nSrc int, err er
 			if d.body {
 				ns, nd, end := decodeIncremental(dst[nDst:], src[nSrc:], &d.state)
 				if nd > 0 {
-					d.outCrc = crc32.Update(d.outCrc, dst[nDst:nDst+nd])
+					d.outCrc = crc32.Update(d.outCrc, crc32.IEEETable, dst[nDst:nDst+nd])
 					d.outSize += int64(nd)
 					nDst += nd
 				}
