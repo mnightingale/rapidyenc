@@ -20,10 +20,12 @@ import (
 
 func NewDecoder(r io.Reader) *Decoder {
 	return &Decoder{
-		r:      r,
-		Decode: &Decode{},
-		dst:    make([]byte, defaultBufSize),
-		src:    make([]byte, defaultBufSize),
+		r: r,
+		Decode: &Decode{
+			outCrc: crc32.New(crc32.IEEETable),
+		},
+		dst: make([]byte, defaultBufSize),
+		src: make([]byte, defaultBufSize),
 	}
 }
 
