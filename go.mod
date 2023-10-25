@@ -1,3 +1,3 @@
-module github.com/mnightingale/go-rapidyenc
+module github.com/mnightingale/rapidyenc
 
-go 1.19
+go 1.21
