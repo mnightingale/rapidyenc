@@ -2,7 +2,6 @@ package rapidyenc
 
 /*
 #cgo CFLAGS: -I${SRCDIR}/rapidyenc
-#cgo LDFLAGS: -L${SRCDIR}/lib -lrapidyenc
 #include "rapidyenc.h"
 */
 import "C"
