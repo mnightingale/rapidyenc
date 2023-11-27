@@ -21,8 +21,7 @@ func TestEncoderSimple(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			encoded, err := encoder.Encode([]byte(tc.input))
-			require.NoError(t, err)
+			encoded := encoder.Encode([]byte(tc.input))
 			require.Equal(t, []byte(tc.expected), encoded)
 		})
 	}

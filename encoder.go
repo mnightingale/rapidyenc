@@ -10,12 +10,9 @@ package rapidyenc
 */
 import "C"
 import (
+	"sync"
 	"unsafe"
 )
-
-func init() {
-	C.rapidyenc_encode_init()
-}
 
 func MaxLength(length, lineLength int) int {
 	return int(C.rapidyenc_encode_max_length(C.size_t(length), C.int(lineLength)))
@@ -31,7 +28,13 @@ func NewEncoder() *Encoder {
 	}
 }
 
-func (e *Encoder) Encode(src []byte) ([]byte, error) {
+var encodeInitOnce sync.Once
+
+func (e *Encoder) Encode(src []byte) []byte {
+	encodeInitOnce.Do(func() {
+		C.rapidyenc_encode_init()
+	})
+
 	dst := make([]byte, MaxLength(len(src), e.LineLength))
 
 	length := C.rapidyenc_encode(
@@ -40,5 +43,5 @@ func (e *Encoder) Encode(src []byte) ([]byte, error) {
 		C.size_t(len(src)),
 	)
 
-	return dst[:length], nil
+	return dst[:length]
 }
