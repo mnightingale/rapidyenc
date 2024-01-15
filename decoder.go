@@ -195,7 +195,12 @@ transform:
 			nSrc += ns - 3
 			d.body = false
 		default:
-			nSrc += ns
+			if d.State == StateCRLFEQ {
+				d.State = StateCRLF
+				nSrc += ns - 1
+			} else {
+				nSrc += ns
+			}
 			return nDst, nSrc, transform.ErrShortSrc
 		}
 	}
