@@ -68,7 +68,7 @@ func TestSplitReads(t *testing.T) {
 			readers := make([]io.Reader, 0)
 			readers = append(readers, strings.NewReader(fmt.Sprintf("=ybegin part=%d line=128 size=%d name=%s\r\n", 1, len(raw), "foo")))
 			readers = append(readers, strings.NewReader(fmt.Sprintf("=ypart begin=%d end=%d\r\n", 1, len(raw)+1)))
-			readers = append(readers, strings.NewReader(string(encoded)))
+			readers = append(readers, bytes.NewReader(encoded))
 			readers = append(readers, strings.NewReader("\r\n="))
 			readers = append(readers, strings.NewReader(fmt.Sprintf("yend size=%d part=%d pcrc32=%08x\r\n", len(raw), 1, crc32.ChecksumIEEE(raw))))
 			readers = append(readers, strings.NewReader(".\r\n"))
