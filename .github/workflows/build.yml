@@ -140,7 +140,12 @@ jobs:
           name: static
           path: lib
       - name: Run tests
-        run: go test -v
+        run: go run gotest.tools/gotestsum@latest --junitfile unit-tests.xml --format pkgname -- ./...
+      - name: Test Summary
+        uses: test-summary/action@v2
+        with:
+          paths: "unit-tests.xml"
+        if: always()
 
   publish:
     name: Publish rapidyenc build

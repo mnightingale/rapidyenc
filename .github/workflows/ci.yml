@@ -1,0 +1,35 @@
+name: Test
+
+on:
+  push:
+    paths-ignore:
+      - 'rapidyenc/**'
+  pull_request:
+    paths-ignore:
+      - 'rapidyenc/**'
+
+jobs:
+  test:
+    name: Test ${{ matrix.os }} go/${{ matrix.go }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        go: [1.21]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go ${{ matrix.go }}
+        uses: actions/setup-go@v4
+        with:
+          go-version: ${{ matrix.go }}
+
+      - name: Run tests
+        run: go run gotest.tools/gotestsum@latest --junitfile unit-tests.xml --format pkgname -- ./...
+
+      - name: Test Summary
+        uses: test-summary/action@v2
+        with:
+          paths: "unit-tests.xml"
+        if: always()
