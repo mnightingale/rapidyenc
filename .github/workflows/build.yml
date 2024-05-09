@@ -3,29 +3,32 @@ name: Build
 on:
   push:
     paths:
-      - 'rapidyenc/**'
+      - 'src/**'
       - '.github/workflows/build.yml'
 
 jobs:
   build_macos:
     name: Build macOS
-    runs-on: macos-13
+    runs-on: macos-latest
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: List Xcode installations
+        run: sudo ls -1 /Applications | grep "Xcode"
+
+      - name: Select Xcode 15.3
+        run: sudo xcode-select -s /Applications/Xcode_15.3.app/Contents/Developer
+
       - name: Build
         run: |
           export ZERO_AR_DATE=1
-          cmake -S rapidyenc -B rapidyenc/build \
+          cmake -S src -B src/build \
           -DCMAKE_OSX_ARCHITECTURES="x86_64;arm64" \
-          -DCMAKE_OSX_DEPLOYMENT_TARGET=12.0 \
-          -DCMAKE_C_COMPILER=/Applications/Xcode_15.0.1.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/cc \
-          -DCMAKE_CXX_COMPILER=/Applications/Xcode_15.0.1.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/c++ \
-          -DCMAKE_AR=/Applications/Xcode_15.0.1.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/ar
-          cmake --build rapidyenc/build --target rapidyenc_static -j$(sysctl -n hw.ncpu)
-          cp rapidyenc/build/rapidyenc_static/librapidyenc.a librapidyenc_darwin.a
+          -DCMAKE_OSX_DEPLOYMENT_TARGET=12.0
+          cmake --build src/build --target rapidyenc_static -j$(sysctl -n hw.ncpu)
+          cp src/build/rapidyenc_static/librapidyenc.a librapidyenc_darwin.a
 
       - name: Upload static library
         uses: actions/upload-artifact@v3
@@ -56,9 +59,9 @@ jobs:
 
       - name: Build
         run: |
-          cmake -S rapidyenc -B rapidyenc/build -G Ninja
-          cmake --build rapidyenc/build --config Release --target rapidyenc_static
-          cp rapidyenc/build/rapidyenc_static/librapidyenc.a librapidyenc_windows_amd64.a
+          cmake -S src -B src/build -G Ninja
+          cmake --build src/build --config Release --target rapidyenc_static
+          cp src/build/rapidyenc_static/librapidyenc.a librapidyenc_windows_amd64.a
 
       - name: Upload shared library
         uses: actions/upload-artifact@v3
@@ -109,10 +112,10 @@ jobs:
             --volume ${{ github.workspace }}:/workspace
             --workdir /workspace
           run: |
-            cmake -S rapidyenc -B rapidyenc/build \
+            cmake -S src -B src/build \
             -D CMAKE_BUILD_TYPE=Release
-            cmake --build rapidyenc/build --target rapidyenc_static -j$(sysctl -n hw.ncpu)
-            cp rapidyenc/build/rapidyenc_static/librapidyenc.a ${{ matrix.library }}
+            cmake --build src/build --target rapidyenc_static -j$(sysctl -n hw.ncpu)
+            cp src/build/rapidyenc_static/librapidyenc.a ${{ matrix.library }}
 
       - name: Upload static library
         uses: actions/upload-artifact@v3
@@ -125,7 +128,7 @@ jobs:
     strategy:
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
-        go: [1.21]
+        go: [1.22]
     runs-on: ${{ matrix.os }}
     needs: [build_linux, build_macos, build_windows]
     steps:
