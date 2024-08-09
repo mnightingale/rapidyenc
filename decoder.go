@@ -454,19 +454,21 @@ func extractCRC(data, substr []byte) (uint32, error) {
 	}
 
 	data = data[start+len(substr):]
-	dec, err := hex.DecodeString(string(data))
-	if len(dec) == 4 {
-		return binary.BigEndian.Uint32(dec), err
+	end := bytes.IndexAny(data, "\x00\x20\r\n")
+	if end != -1 {
+		data = data[:end]
 	}
 
-	// Last 4 bytes to handle some broken encoders
-	dec = dec[max(0, len(dec)-4):]
-	if len(dec) == 4 {
-		return binary.BigEndian.Uint32(dec), nil
+	// Take up to the last 8 characters
+	parsed := data[len(data)-min(8, len(data)):]
+
+	// Left pad unexpected length with 0
+	if len(parsed) != 8 {
+		padded := []byte("00000000")
+		copy(padded[8-len(parsed):], parsed)
+		parsed = padded
 	}
 
-	// Pad to 4 bytes length
-	buf := make([]byte, 4)
-	copy(buf[4-len(dec):], dec)
-	return binary.BigEndian.Uint32(buf), nil
+	_, err := hex.Decode(parsed, parsed)
+	return binary.BigEndian.Uint32(parsed), err
 }
