@@ -156,13 +156,23 @@ func TestExtractCRC(t *testing.T) {
 		expected uint32
 	}{
 		{"ffffffffa95d3e50", 0xa95d3e50},
+		{"fffffffa95d3e50", 0xa95d3e50},
 		{"ffffffa95d3e50", 0xa95d3e50},
+		{"fffffa95d3e50", 0xa95d3e50},
 		{"ffffa95d3e50", 0xa95d3e50},
+		{"fffa95d3e50", 0xa95d3e50},
 		{"ffa95d3e50", 0xa95d3e50},
+		{"fa95d3e50", 0xa95d3e50},
 		{"a95d3e50", 0xa95d3e50},
+		{"a95d3e5", 0xa95d3e5},
 		{"a95d3e", 0xa95d3e},
+		{"a95d3", 0xa95d3},
 		{"a95d", 0xa95d},
+		{"a95", 0xa95},
 		{"a9", 0xa9},
+		{"a", 0xa},
+		{"", 0},
+		{"12345678 ", 0x12345678}, // space at end
 	}
 
 	for _, tc := range cases {
