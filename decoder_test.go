@@ -295,10 +295,10 @@ func TestDetectFormat(t *testing.T) {
 		want Format
 	}{
 		{"yEnc header", []byte("=ybegin part=1 line=128 size=128 name=foo.txt\r\n"), FormatYenc},
-		{"UUencode 63 bytes, \n", append([]byte{'M'}, make([]byte, 61)...), FormatUU},
-		{"UUencode 63 bytes, \r", append([]byte{'M'}, make([]byte, 61)...), FormatUU},
-		{"UUencode 62 bytes, \n", append([]byte{'M'}, make([]byte, 60)...), FormatUU},
-		{"UUencode 62 bytes, \r", append([]byte{'M'}, make([]byte, 60)...), FormatUU},
+		{"UUencode 63 bytes, \n", append([]byte{'M'}, make([]byte, 62)...), FormatUU},
+		{"UUencode 63 bytes, \r", append([]byte{'M'}, make([]byte, 62)...), FormatUU},
+		{"UUencode 62 bytes, \n", append([]byte{'M'}, make([]byte, 61)...), FormatUU},
+		{"UUencode 62 bytes, \r", append([]byte{'M'}, make([]byte, 61)...), FormatUU},
 		{"UUencode begin header", []byte("begin 644 file.txt"), FormatUU},
 		{"Unknown", []byte("random data"), FormatUnknown},
 	}
@@ -315,6 +315,19 @@ func TestDetectFormat(t *testing.T) {
 				t.Errorf("detectFormat(%q) = %v, want %v", tc.line, got, tc.want)
 			}
 		})
+	}
+}
+
+func TestUUdecode(t *testing.T) {
+	encoded := []byte("-22!,3U9%($=05\"$A(0``")
+	want := []byte("I LOVE GPT!!!")
+
+	got, err := UUdecode(encoded)
+	if err != nil {
+		t.Fatalf("UUdecode error: %v", err)
+	}
+	if !bytes.Equal(got, want) {
+		t.Errorf("UUdecode(%q) = %q, want %q", encoded, got, want)
 	}
 }
 
@@ -431,3 +444,48 @@ func RapidyencDecoderFilesTest(t *testing.T) (errs []error) {
 	} // end for range files
 	return errs
 }
+
+/*
+func TestUUdecodeFiles(t *testing.T) {
+	files := []string{
+		"uuencode/test1.uue",
+		"uuencode/test2.uue",
+		// Add more test files as needed
+	}
+	for _, fname := range files {
+		t.Logf("\n=== Testing UUdecode with file: %s ===\n", fname)
+		f, err := os.Open(filepath.Clean(fname))
+		if err != nil {
+			t.Errorf("Failed to open %s: %v\n", fname, err)
+			continue
+		}
+		defer f.Close()
+
+		var decodedData bytes.Buffer
+		scanner := bufio.NewScanner(f)
+		inBody := false
+		for scanner.Scan() {
+			line := scanner.Bytes()
+			// Detect UUencode header
+			if bytes.HasPrefix(line, []byte("begin ")) {
+				inBody = true
+				continue
+			}
+			if bytes.Equal(line, []byte("end")) {
+				inBody = false
+				break
+			}
+			if inBody {
+				decoded, err := UUdecode(line)
+				if err != nil {
+					t.Errorf("UUdecode error in %s: %v", fname, err)
+					break
+				}
+				decodedData.Write(decoded)
+			}
+		}
+		// Optionally, compare decodedData.Bytes() to a reference file or hash
+		t.Logf("Decoded %d bytes from %s", decodedData.Len(), fname)
+	}
+}
+*/
