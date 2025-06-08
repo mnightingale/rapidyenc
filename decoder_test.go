@@ -5,12 +5,29 @@ import (
 	"bytes"
 	"crypto/rand"
 	"fmt"
-	"github.com/stretchr/testify/require"
 	"hash/crc32"
 	"io"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/stretchr/testify/require"
 )
+
+func runDecoderTest(t *testing.T, raw []byte, expectedCRC uint32) {
+	t.Helper()
+	dec := AcquireDecoder()
+	defer ReleaseDecoder(dec)
+	dec.SetReader(bytes.NewReader(body(raw)))
+	b := bytes.NewBuffer(nil)
+	n, err := io.Copy(b, dec)
+	require.Equal(t, int64(len(raw)), n)
+	require.NoError(t, err)
+	require.Equal(t, raw, b.Bytes())
+	require.Equal(t, expectedCRC, dec.Meta().Hash)
+	require.Equal(t, int64(len(raw)), dec.Meta().End)
+}
 
 func TestDecode(t *testing.T) {
 	space := make([]byte, 800000)
@@ -30,20 +47,9 @@ func TestDecode(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			raw := []byte(tc.raw)
-
-			encoded := bytes.NewReader(body(raw))
-
-			dec := AcquireDecoder()
-			dec.SetReader(encoded)
-			b := bytes.NewBuffer(nil)
-			n, err := io.Copy(b, dec)
-			require.Equal(t, int64(len(raw)), n)
-			require.NoError(t, err)
-			require.Equal(t, raw, b.Bytes())
-			require.Equal(t, tc.crc, dec.Meta().Hash)
-			require.Equal(t, int64(len(raw)), dec.Meta().End)
-			ReleaseDecoder(dec)
+			runDecoderTest(t, raw, tc.crc)
 		})
 	}
 }
@@ -60,6 +66,7 @@ func TestSplitReads(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			raw := []byte(tc.raw)
 
 			enc := NewEncoder()
@@ -76,6 +83,7 @@ func TestSplitReads(t *testing.T) {
 			reader := io.MultiReader(readers...)
 
 			dec := AcquireDecoder()
+			defer ReleaseDecoder(dec)
 			dec.SetReader(reader)
 			b := bytes.NewBuffer(nil)
 			n, err := io.Copy(b, dec)
@@ -84,7 +92,6 @@ func TestSplitReads(t *testing.T) {
 			require.Equal(t, raw, b.Bytes())
 			require.Equal(t, tc.crc, dec.Meta().Hash)
 			require.Equal(t, int64(len(raw)), dec.Meta().End)
-			ReleaseDecoder(dec)
 		})
 	}
 }
@@ -150,6 +157,21 @@ func TestExtractString(t *testing.T) {
 	}
 }
 
+func TestExtractIntError(t *testing.T) {
+	_, err := extractInt([]byte("no size here"), []byte(" size="))
+	require.Error(t, err)
+}
+
+func TestExtractStringError(t *testing.T) {
+	_, err := extractString([]byte("no name here"), []byte(" name="))
+	require.Error(t, err)
+}
+
+func TestExtractCRCError(t *testing.T) {
+	_, err := extractCRC([]byte("no crc here"), []byte("pcrc32="))
+	require.Error(t, err)
+}
+
 func TestExtractCRC(t *testing.T) {
 	cases := []struct {
 		raw      string
@@ -183,4 +205,179 @@ func TestExtractCRC(t *testing.T) {
 			require.Equal(t, tc.expected, i)
 		})
 	}
+}
+
+// TestDecodeMissingYbegin tests decoding data missing the "=ybegin" header
+func TestDecodeMissingYbegin(t *testing.T) {
+	data := []byte("=yend size=0 part=1 pcrc32=00000000\r\n.\r\n")
+	dec := AcquireDecoder()
+	defer ReleaseDecoder(dec)
+	dec.SetReader(bytes.NewReader(data))
+	buf := make([]byte, 10)
+	_, err := dec.Read(buf)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "without finding \"=begin\" header")
+}
+
+// TestDecodeMissingYend tests decoding data missing the "=yend" trailer
+func TestDecodeMissingYend(t *testing.T) {
+	data := []byte("=ybegin part=1 line=128 size=5 name=foo\r\nabcde\r\n.\r\n")
+	dec := AcquireDecoder()
+	defer ReleaseDecoder(dec)
+	dec.SetReader(bytes.NewReader(data))
+	buf := make([]byte, 10)
+	_, err := dec.Read(buf)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "without finding \"=yend\" trailer")
+}
+
+// TestDecodeCRCMismatch tests decoding data with a CRC mismatch
+func TestDecodeCRCMismatch(t *testing.T) {
+	// Use the encoder to generate a valid yEnc body for 3 bytes
+	raw := []byte{1, 2, 3}
+	enc := NewEncoder()
+	encoded := enc.Encode(raw)
+	data := []byte(fmt.Sprintf(
+		"=ybegin part=1 line=128 size=3 name=foo\r\n=ypart begin=1 end=4\r\n%s\r\n=yend size=3 part=1 pcrc32=deadbeef\r\n.\r\n",
+		string(encoded),
+	))
+	dec := AcquireDecoder()
+	defer ReleaseDecoder(dec)
+	dec.SetReader(bytes.NewReader(data))
+	buf := make([]byte, 10)
+	_, err := dec.Read(buf)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "ERROR CRC32 expected hash '0xdeadbeef' but got '0x55bc801d'")
+}
+
+// TestDecodeSizeMismatch tests decoding data with a size mismatch
+func TestDecodeSizeMismatch(t *testing.T) {
+	raw := []byte{1, 2, 3}
+	enc := NewEncoder()
+	encoded := enc.Encode(raw)
+	data := []byte(fmt.Sprintf(
+		"=ybegin part=1 line=128 size=5 name=foo\r\n=ypart begin=1 end=4\r\n%s\r\n=yend size=5 part=1 pcrc32=00000000\r\n.\r\n",
+		string(encoded),
+	))
+	dec := AcquireDecoder()
+	defer ReleaseDecoder(dec)
+	dec.SetReader(bytes.NewReader(data))
+	buf := make([]byte, 10)
+	_, err := dec.Read(buf)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "expected size 5 but got 3")
+}
+
+// TestRapidyencDecoderFiles runs rapidyenc decoder tests on sample files.
+func TestRapidyencDecoderFiles(t *testing.T) {
+	errList := RapidyencDecoderFilesTest(t)
+	for _, err := range errList {
+		if err != nil {
+			t.Errorf("rapidyenc decoder file test failed: %v", err)
+		}
+	}
+}
+
+// RapidyencDecoderFilesTest runs rapidyenc decoder tests on sample files.
+// It reads yEnc encoded files, decodes them, and checks for CRC32 integrity.
+func RapidyencDecoderFilesTest(t *testing.T) (errs []error) {
+	files := []string{
+		"yenc/multipart_test.yenc",
+		"yenc/multipart_test_badcrc.yenc",
+		"yenc/singlepart_test.yenc",
+		"yenc/singlepart_test_badcrc.yenc",
+	}
+	for _, fname := range files {
+		t.Logf("\n=== Testing rapidyenc with file: %s ===\n", fname)
+		f, err := os.Open(filepath.Clean(fname))
+		if err != nil {
+			t.Errorf("Failed to open %s: %v\n", fname, err)
+			continue
+		}
+
+		pipeReader, pipeWriter := io.Pipe()
+		decoder := AcquireDecoderWithReader(pipeReader)
+		decoder.SetDebug(true, true)
+		defer ReleaseDecoder(decoder)
+		segId := fname
+		decoder.SetSegmentId(&segId)
+
+		// Start goroutine to read decoded data
+		var decodedData bytes.Buffer
+		done := make(chan error, 1)
+		go func() {
+			buf := make([]byte, DefaultBufSize)
+			for {
+				n, aerr := decoder.Read(buf)
+				if n > 0 {
+					decodedData.Write(buf[:n])
+				}
+				if aerr == io.EOF {
+					done <- nil
+					return
+				}
+				if aerr != nil {
+					done <- aerr
+					return
+				}
+			}
+		}()
+
+		// Write file lines to the pipeWriter
+		scanner := bufio.NewScanner(f)
+		for scanner.Scan() {
+			line := scanner.Text()
+			if _, err := pipeWriter.Write([]byte(line + "\r\n")); err != nil {
+				t.Errorf("Error writing to pipe: %v\n", err)
+				pipeWriter.Close()
+				ReleaseDecoder(decoder)
+				return
+			}
+		}
+		if _, err := pipeWriter.Write([]byte(".\r\n")); err != nil { // NNTP end marker
+			t.Errorf("Error writing end marker to pipe: %v\n", err)
+			pipeWriter.Close()
+			ReleaseDecoder(decoder)
+			return
+		}
+		pipeWriter.Close()
+		f.Close()
+		if aerr := <-done; aerr != nil {
+			err = aerr
+			var aBadCrc uint32
+			meta := decoder.Meta()
+			t.Logf("DEBUG Decoder error: '%v' (maybe an expected error, check below)\n", err)
+			expectedCrc := decoder.ExpectedCrc()
+			if expectedCrc != 0 && expectedCrc != meta.Hash {
+
+				// Set aBadCrc based on the file name
+				switch fname {
+				case "yenc/singlepart_test_badcrc.yenc":
+					aBadCrc = 0x6d04a475
+				case "yenc/multipart_test_badcrc.yenc":
+					aBadCrc = 0xf6acc027
+				}
+				if aBadCrc > 0 && aBadCrc != meta.Hash {
+					t.Errorf("WARNING1 rapidyenc: CRC mismatch! expected=%#08x | got meta.Hash=%#08x | wanted aBadCrc=%#08x fname: '%s'\n\n", expectedCrc, meta.Hash, aBadCrc, fname)
+					errs = append(errs, aerr)
+				} else if aBadCrc > 0 && aBadCrc == meta.Hash {
+					t.Logf("rapidyenc OK expected=%#08x | got meta.Hash=%#08x | wanted aBadCrc=%#08x fname: '%s'\n\n", expectedCrc, meta.Hash, aBadCrc, fname)
+				} else if expectedCrc != meta.Hash {
+					t.Logf("WARNING2 rapidyenc: CRC mismatch! expected=%#08x | got meta.Hash=%#08x | wanted aBadCrc=%#08x fname: '%s'\n\n", expectedCrc, meta.Hash, aBadCrc, fname)
+					errs = append(errs, aerr)
+				} else {
+					t.Logf("GOOD CRC matches! aBadCrc=%#08x Name: '%s' fname: '%s'\n", aBadCrc, meta.Name, fname)
+				}
+
+			} else if expectedCrc == 0 {
+				t.Errorf("WARNING rapidyenc: No expected CRC set, cannot verify integrity. fname: '%s'\n", fname)
+				errs = append(errs, aerr)
+			}
+		} else {
+			meta := decoder.Meta()
+			t.Logf("OK Decoded %d bytes, CRC32: %#08x, Name: '%s' fname: '%s'\n", decodedData.Len(), meta.Hash, meta.Name, fname)
+		}
+		ReleaseDecoder(decoder)
+	} // end for range files
+	return errs
 }
