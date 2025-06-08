@@ -277,16 +277,16 @@ transform:
 				} else
 			*/
 			if !d.begin {
-				if d.format == FormatUU {
-					err = fmt.Errorf("[rapidyenc] end of article without finding \"begin\" header: %w", ErrDataCorruption)
-				} else if d.format == FormatYenc {
+				if d.format == FormatYenc {
 					err = fmt.Errorf("[rapidyenc] end of article without finding \"=ybegin\" header: %w", ErrDataCorruption)
+				} else if d.format == FormatUU {
+					err = fmt.Errorf("[rapidyenc] end of article without finding \"begin\" header: %w", ErrDataCorruption)
 				}
 			} else if !d.end {
-				if d.format == FormatUU {
-					err = fmt.Errorf("[rapidyenc] end of article without finding \"end\" trailer: %w", ErrDataCorruption)
-				} else if d.format == FormatYenc {
+				if d.format == FormatYenc {
 					err = fmt.Errorf("[rapidyenc] end of article without finding \"=yend\" trailer: %w", ErrDataCorruption)
+				} else if d.format == FormatUU {
+					err = fmt.Errorf("[rapidyenc] end of article without finding \"end\" trailer: %w", ErrDataCorruption)
 				}
 			} else if d.format != FormatUU && ((!d.part && d.m.Size != d.endSize) || (d.endSize != d.actualSize)) {
 				err = fmt.Errorf("[rapidyenc] expected size %d but got %d: %w", d.m.Size, d.actualSize, ErrDataCorruption)
