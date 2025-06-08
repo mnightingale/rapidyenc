@@ -278,14 +278,14 @@ transform:
 			*/
 			if !d.begin {
 				if d.format == FormatUU {
-					err = fmt.Errorf("[rapidyenc] end of article without finding \"begin\" trailer: %w", ErrDataCorruption)
-				} else {
-					err = fmt.Errorf("[rapidyenc] end of article without finding \"=ybegin\" trailer: %w", ErrDataCorruption)
+					err = fmt.Errorf("[rapidyenc] end of article without finding \"begin\" header: %w", ErrDataCorruption)
+				} else if d.format == FormatYenc {
+					err = fmt.Errorf("[rapidyenc] end of article without finding \"=ybegin\" header: %w", ErrDataCorruption)
 				}
 			} else if !d.end {
 				if d.format == FormatUU {
 					err = fmt.Errorf("[rapidyenc] end of article without finding \"end\" trailer: %w", ErrDataCorruption)
-				} else {
+				} else if d.format == FormatYenc {
 					err = fmt.Errorf("[rapidyenc] end of article without finding \"=yend\" trailer: %w", ErrDataCorruption)
 				}
 			} else if d.format != FormatUU && ((!d.part && d.m.Size != d.endSize) || (d.endSize != d.actualSize)) {
@@ -381,11 +381,20 @@ transform:
 					nDst += copy(dst[nDst:], decoded)
 				}
 			}
-
 		}
 	}
 
 	if atEOF {
+		// Check for missing yEnc header at EOF
+		if d.format == FormatUnknown && !d.begin {
+			return nDst, nSrc, fmt.Errorf("[rapidyenc] end of article without finding any begin header: %w", ErrDataCorruption)
+		}
+		if d.format == FormatYenc && !d.begin {
+			return nDst, nSrc, fmt.Errorf("[rapidyenc] end of article without finding \"=ybegin\" header: %w", ErrDataCorruption)
+		}
+		if d.format == FormatUU && !d.begin {
+			return nDst, nSrc, fmt.Errorf("[rapidyenc] end of article without finding \"begin\" header: %w", ErrDataCorruption)
+		}
 		return nDst, nSrc, io.EOF
 	} else {
 		return nDst, nSrc, transform.ErrShortSrc
