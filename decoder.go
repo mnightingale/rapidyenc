@@ -14,7 +14,6 @@ package rapidyenc
 */
 import "C"
 import (
-	"bufio"
 	"bytes"
 	"encoding/binary"
 	"encoding/hex"
@@ -24,8 +23,6 @@ import (
 	"hash/crc32"
 	"io"
 	"log"
-	"os"
-	"path/filepath"
 	"strconv"
 	"sync"
 	"unsafe"
@@ -178,25 +175,6 @@ func (d *Decoder) SetSegmentId(segId *string) {
 }
 
 // Meta returns the Meta information parsed from the yEnc headers.
-/*
-	// This includes the size of the file, the begin and end offsets, the CRC32 hash,
-	// and the name of the file.
-	// This is set when the ybegin, ypart, and yend headers are processed.
-	// If the headers are not present, the Meta will contain default values.
-	// The Meta can be used to verify the integrity of the decoded data and to
-	// extract information about the file being decoded.
-	// It is recommended to call this after the decoder has processed the yEnc data,
-	// typically after the Read method has returned io.EOF.
-	// If the yEnc headers are not present, the Meta will contain default values.
-	// For example, Size will be 0, Begin and End will be 0, Hash will be 0,
-	// and Name will be an empty string.
-	// If the yEnc headers are present, the Meta will contain the parsed values.
-	// For example, Size will be the total size of the file, Begin will be the
-	// part begin offset (0-indexed), End will be the part end offset (0-indexed, exclusive),
-	// Hash will be the CRC32 hash of the decoded data, and Name will be the name of the file.
-	// This is useful for verifying the integrity of the decoded data and for extracting
-	// information about the file being decoded.
-*/
 func (d *Decoder) Meta() Meta {
 	return d.m
 }
@@ -216,6 +194,10 @@ var (
 	ErrCrcMismatch    = errors.New("crc32 mismatch")
 )
 
+// Read reads transformed bytes from the Decoder instance.
+// It reads from the underlying io.Reader, transforms the data using the Transform method,
+// and returns the transformed bytes in the provided byte slice p.
+// It returns the number of bytes read and any error encountered during the process.
 func (d *Decoder) Read(p []byte) (int, error) {
 	n, err := 0, error(nil)
 	for {
@@ -586,6 +568,10 @@ var (
 )
 
 // extractCRC converts a hexadecimal representation of a crc32 hash
+// from the data starting after the given substring.
+// It searches for the substring in the data, and if found, it extracts
+// the crc32 hash value, ensuring it is 8 characters long.
+// Zero-pads the value if it is shorter than 8 characters.
 func extractCRC(data, substr []byte) (uint32, error) {
 	start := bytes.Index(data, substr)
 	if start == -1 {
@@ -625,105 +611,3 @@ func dlog(logthis bool, format string, a ...any) {
 	}
 	log.Printf(format, a...)
 } // end dlog
-
-func TestRapidyencDecoderFiles() (errs []error) {
-	files := []string{
-		"yenc/multipart_test.yenc",
-		"yenc/multipart_test_badcrc.yenc",
-		"yenc/singlepart_test.yenc",
-		"yenc/singlepart_test_badcrc.yenc",
-	}
-	for _, fname := range files {
-		fmt.Printf("\n=== Testing rapidyenc with file: %s ===\n", fname)
-		f, err := os.Open(filepath.Clean(fname))
-		if err != nil {
-			fmt.Printf("Failed to open %s: %v\n", fname, err)
-			continue
-		}
-
-		pipeReader, pipeWriter := io.Pipe()
-		decoder := AcquireDecoderWithReader(pipeReader)
-		decoder.SetDebug(true, true)
-		defer ReleaseDecoder(decoder)
-		segId := fname
-		decoder.SetSegmentId(&segId)
-
-		// Start goroutine to read decoded data
-		var decodedData bytes.Buffer
-		done := make(chan error, 1)
-		go func() {
-			buf := make([]byte, DefaultBufSize)
-			for {
-				n, aerr := decoder.Read(buf)
-				if n > 0 {
-					decodedData.Write(buf[:n])
-				}
-				if aerr == io.EOF {
-					done <- nil
-					return
-				}
-				if aerr != nil {
-					done <- aerr
-					return
-				}
-			}
-		}()
-
-		// Write file lines to the pipeWriter
-		scanner := bufio.NewScanner(f)
-		for scanner.Scan() {
-			line := scanner.Text()
-			if _, err := pipeWriter.Write([]byte(line + "\r\n")); err != nil {
-				fmt.Printf("Error writing to pipe: %v\n", err)
-				pipeWriter.Close()
-				ReleaseDecoder(decoder)
-				return
-			}
-		}
-		if _, err := pipeWriter.Write([]byte(".\r\n")); err != nil { // NNTP end marker
-			fmt.Printf("Error writing end marker to pipe: %v\n", err)
-			pipeWriter.Close()
-			ReleaseDecoder(decoder)
-			return
-		}
-		pipeWriter.Close()
-		f.Close()
-		if aerr := <-done; aerr != nil {
-			err = aerr
-			var aBadCrc uint32
-			meta := decoder.Meta()
-			dlog(always, "DEBUG Decoder error: '%v' (maybe an expected error, check below)\n", err)
-			expectedCrc := decoder.ExpectedCrc()
-			if expectedCrc != 0 && expectedCrc != meta.Hash {
-
-				// Set aBadCrc based on the file name
-				switch fname {
-				case "yenc/singlepart_test_badcrc.yenc":
-					aBadCrc = 0x6d04a475
-				case "yenc/multipart_test_badcrc.yenc":
-					aBadCrc = 0xf6acc027
-				}
-				if aBadCrc > 0 && aBadCrc != meta.Hash {
-					fmt.Printf("WARNING1 rapidyenc: CRC mismatch! expected=%#08x | got meta.Hash=%#08x | wanted aBadCrc=%#08x fname: '%s'\n\n", expectedCrc, meta.Hash, aBadCrc, fname)
-					errs = append(errs, aerr)
-				} else if aBadCrc > 0 && aBadCrc == meta.Hash {
-					fmt.Printf("rapidyenc OK expected=%#08x | got meta.Hash=%#08x | wanted aBadCrc=%#08x fname: '%s'\n\n", expectedCrc, meta.Hash, aBadCrc, fname)
-				} else if expectedCrc != meta.Hash {
-					fmt.Printf("WARNING2 rapidyenc: CRC mismatch! expected=%#08x | got meta.Hash=%#08x | wanted aBadCrc=%#08x fname: '%s'\n\n", expectedCrc, meta.Hash, aBadCrc, fname)
-					errs = append(errs, aerr)
-				} else {
-					fmt.Printf("GOOD CRC matches! aBadCrc=%#08x Name: '%s' fname: '%s'\n", aBadCrc, meta.Name, fname)
-				}
-
-			} else if expectedCrc == 0 {
-				fmt.Printf("WARNING rapidyenc: No expected CRC set, cannot verify integrity. fname: '%s'\n", fname)
-				errs = append(errs, aerr)
-			}
-		} else {
-			meta := decoder.Meta()
-			fmt.Printf("OK Decoded %d bytes, CRC32: %#08x, Name: '%s' fname: '%s'\n", decodedData.Len(), meta.Hash, meta.Name, fname)
-		}
-		ReleaseDecoder(decoder)
-	} // end for range files
-	return errs
-}
