@@ -1,6 +1,7 @@
+#!/usr/bin/env bash
 cd rapidyenc || exit 2
 rm -rf build
-mkdir -p build 
+mkdir -p build
 cd build || exit 3
 cmake .. -DCMAKE_TOOLCHAIN_FILE=../toolchain-linux-arm64.cmake || exit 4
 cmake --build . --config Release || exit 5
