@@ -2,14 +2,10 @@ package rapidyenc
 
 /*
 #cgo CFLAGS: -I${SRCDIR}/src
-#cgo darwin LDFLAGS: ${SRCDIR}/librapidyenc.a -lstdc++
-#cgo windows,amd64 LDFLAGS: ${SRCDIR}/librapidyenc.a -lstdc++
-#cgo windows,386   LDFLAGS: ${SRCDIR}/librapidyenc.a -lstdc++
-#cgo windows,arm   LDFLAGS: ${SRCDIR}/librapidyenc.a -lstdc++
-#cgo linux,amd64   LDFLAGS: ${SRCDIR}/librapidyenc.a -lstdc++
-#cgo linux,386     LDFLAGS: ${SRCDIR}/librapidyenc.a -lstdc++
-#cgo linux,arm     LDFLAGS: ${SRCDIR}/librapidyenc.a -lstdc++
-#cgo linux,arm64   LDFLAGS: ${SRCDIR}/librapidyenc.a -lstdc++
+#cgo darwin LDFLAGS: ${SRCDIR}/librapidyenc_darwin.a -lstdc++
+#cgo windows,amd64 LDFLAGS: ${SRCDIR}/librapidyenc_windows_amd64.a -lstdc++
+#cgo linux,amd64 LDFLAGS: ${SRCDIR}/librapidyenc_linux_amd64.a -lstdc++
+#cgo linux,arm64 LDFLAGS: ${SRCDIR}/librapidyenc_linux_arm64.a -lstdc++
 #include "rapidyenc.h"
 */
 import "C"
