@@ -31,9 +31,9 @@ jobs:
           cp src/build/rapidyenc_static/librapidyenc.a librapidyenc_darwin.a
 
       - name: Upload static library
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
-          name: static
+          name: librapidyenc_darwin
           path: librapidyenc_darwin.a
 
   build_windows:
@@ -64,9 +64,9 @@ jobs:
           cp src/build/rapidyenc_static/librapidyenc.a librapidyenc_windows_amd64.a
 
       - name: Upload shared library
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
-          name: static
+          name: librapidyenc_windows_amd64
           path: librapidyenc_windows_amd64.a
 
   build_linux:
@@ -100,9 +100,9 @@ jobs:
           cp src/build/rapidyenc_static/librapidyenc.a ${{ matrix.library }}
 
       - name: Upload static library
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
-          name: static
+          name: ${{ matrix.library }}
           path: ${{ matrix.library }}
 
   test:
@@ -120,10 +120,10 @@ jobs:
         uses: actions/setup-go@v4
         with:
           go-version: ${{ matrix.go }}
-      - uses: actions/download-artifact@v3
+      - uses: actions/download-artifact@v4
         with:
-          name: static
-          path: lib
+          pattern: librapidyenc_*
+          merge-multiple: true
       - name: Run tests
         run: go run gotest.tools/gotestsum@latest --junitfile unit-tests.xml --format pkgname -- ./...
       - name: Test Summary
@@ -148,9 +148,10 @@ jobs:
         uses: actions/checkout@v4
         with:
           ref: ${{ github.head_ref }}
-      - uses: actions/download-artifact@v3
+      - uses: actions/download-artifact@v4
         with:
-          name: static
+          pattern: librapidyenc_*
+          merge-multiple: true
       - uses: stefanzweifel/git-auto-commit-action@v5
         with:
           file_pattern: '*.a'
