@@ -60,7 +60,7 @@ jobs:
         if: matrix.platform == 'windows/amd64'
         run: |
           sudo apt-get install --yes --no-install-recommends \ 
-          gcc-mingw-w64-x86-64 g++-mingw-w64-x86-64
+          mingw-w64 gcc-mingw-w64-x86-64 g++-mingw-w64-x86-64
 
       - name: Checkout code
         uses: actions/checkout@v4
