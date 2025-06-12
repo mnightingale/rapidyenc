@@ -100,7 +100,7 @@ jobs:
       - name: Build
         run: |
           cmake -S src -B src/build -DCMAKE_TOOLCHAIN_FILE=${{ matrix.toolchain }}
-          cmake --build src/build --config Release --target rapidyenc_static -j $(sysctl -n hw.ncpu)
+          cmake --build src/build --config Release --target rapidyenc_static -j $(nproc)
           cp src/build/rapidyenc_static/librapidyenc.a ${{ matrix.library }}
 
       - name: Upload static library
