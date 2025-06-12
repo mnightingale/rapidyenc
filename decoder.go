@@ -328,34 +328,11 @@ transform:
 
 		switch d.format {
 		case FormatYenc:
-			// Header/trailer lines
-			if bytes.HasPrefix(line, []byte("=ybegin ")) ||
-				bytes.HasPrefix(line, []byte("=ypart ")) ||
-				bytes.HasPrefix(line, []byte("=yend ")) {
-				d.processYenc(line)
-				goto transform
-			}
-			// If we're in the body, decode this line
-			if d.body {
-				// Remove trailing \r\n for decoding
-				bodyLine := line
-				if len(bodyLine) >= 2 && bodyLine[len(bodyLine)-2] == '\r' && bodyLine[len(bodyLine)-1] == '\n' {
-					bodyLine = bodyLine[:len(bodyLine)-2]
-				}
-
-				dlog(d.debugSpam, "DecodeIncremental input: %q\n", bodyLine)
-				nd, ns, end, derr := DecodeIncremental(dst[nDst:], bodyLine, &d.State)
-				if derr != nil && derr != io.EOF {
-					dlog(always, "ERROR in rapidyenc.DecodeIncremental: nd=%d ns=%d end=%v err=%v\n", nd, ns, end, derr)
-				}
-
-				if nd > 0 {
-					d.hash.Write(dst[nDst : nDst+nd])
-					d.actualSize += int64(nd)
-					nDst += nd
-				}
-				goto transform
-			}
+			d.processYenc(line)
+			goto transform
+		case FormatUU:
+			// TODO: does not uudecode, for now just copies encoded data
+			nDst += copy(dst[nDst:], line)
 		}
 	}
 
