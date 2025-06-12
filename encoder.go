@@ -10,9 +10,6 @@ package rapidyenc
 */
 import "C"
 import (
-	"bytes"
-	"fmt"
-	"os"
 	"sync"
 	"unsafe"
 )
