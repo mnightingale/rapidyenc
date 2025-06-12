@@ -84,7 +84,6 @@ jobs:
 
     steps:
       - name: Setup Cross Compiler (common)
-        if: matrix.platform != 'linux/amd64'
         run: |
           sudo apt-get install --yes --no-install-recommends \
           build-essential musl-tools
