@@ -1,2 +1,4 @@
 rapidyenc/build
 src/build
+librapidyenc.a
+*_testing_librapidyenc.a
