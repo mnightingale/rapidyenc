@@ -15,18 +15,10 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: List Xcode installations
-        run: sudo ls -1 /Applications | grep "Xcode"
-
-      - name: Select Xcode 15.3
-        run: sudo xcode-select -s /Applications/Xcode_15.3.app/Contents/Developer
-
       - name: Build
         run: |
           export ZERO_AR_DATE=1
-          cmake -S src -B src/build \
-          -DCMAKE_OSX_ARCHITECTURES="x86_64;arm64" \
-          -DCMAKE_OSX_DEPLOYMENT_TARGET=12.0
+          cmake -S src -B src/build -DCMAKE_TOOLCHAIN_FILE=../../toolchain-darwin.cmake
           cmake --build src/build --target rapidyenc_static -j$(sysctl -n hw.ncpu)
           cp src/build/rapidyenc_static/librapidyenc.a librapidyenc_darwin.a
 
@@ -35,39 +27,6 @@ jobs:
         with:
           name: librapidyenc_darwin
           path: librapidyenc_darwin.a
-
-  build_windows:
-    name: Build Windows x64
-    runs-on: windows-latest
-
-    defaults:
-      run:
-        shell: msys2 {0}
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - uses: msys2/setup-msys2@v2
-        with:
-          msystem: MINGW64
-          update: true
-          pacboy: >-
-            gcc:p
-            cmake:p
-            ninja:p
-
-      - name: Build
-        run: |
-          cmake -S src -B src/build -G Ninja
-          cmake --build src/build --config Release --target rapidyenc_static
-          cp src/build/rapidyenc_static/librapidyenc.a librapidyenc_windows_amd64.a
-
-      - name: Upload shared library
-        uses: actions/upload-artifact@v4
-        with:
-          name: librapidyenc_windows_amd64
-          path: librapidyenc_windows_amd64.a
 
   build_linux:
     name: Build ${{ matrix.platform }}
@@ -81,6 +40,9 @@ jobs:
           - platform: linux/arm64
             library: librapidyenc_linux_arm64.a
             toolchain: ../../toolchain-linux-arm64.cmake
+          - platform: windows/amd64
+            library: librapidyenc_windows_amd64.a
+            toolchain: ../../toolchain-windows-amd64.cmake
 
     steps:
       - name: Setup Cross Compiler (common)
@@ -93,6 +55,12 @@ jobs:
         run: |
           sudo apt-get install --yes --no-install-recommends \
           gcc-aarch64-linux-gnu binutils-aarch64-linux-gnu g++-aarch64-linux-gnu gcc-arm-linux-gnueabi
+
+      - name: Setup Cross Compiler (windows/amd64)
+        if: matrix.platform == 'windows/amd64'
+        run: |
+          sudo apt-get install --yes --no-install-recommends \ 
+          gcc-mingw-w64-x86-64 g++-mingw-w64-x86-64
 
       - name: Checkout code
         uses: actions/checkout@v4
@@ -116,7 +84,7 @@ jobs:
         os: [ubuntu-latest, ubuntu-24.04-arm, macos-latest, windows-latest]
         go: [1.22]
     runs-on: ${{ matrix.os }}
-    needs: [build_linux, build_macos, build_windows]
+    needs: [build_linux, build_macos]
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
