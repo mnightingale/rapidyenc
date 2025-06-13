@@ -48,6 +48,7 @@ jobs:
             gcc:p
             cmake:p
             ninja:p
+            make:p
 
       - name: Build
         run: make
