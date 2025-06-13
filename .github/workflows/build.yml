@@ -51,7 +51,7 @@ jobs:
             make:p
 
       - name: Build
-        run: make
+        run: mingw32-make.exe
 
       - name: Upload shared library
         uses: actions/upload-artifact@v4
