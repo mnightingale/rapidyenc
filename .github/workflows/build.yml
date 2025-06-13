@@ -14,26 +14,16 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-
-      - name: List Xcode installations
-        run: sudo ls -1 /Applications | grep "Xcode"
-
-      - name: Select Xcode 15.3
-        run: sudo xcode-select -s /Applications/Xcode_15.3.app/Contents/Developer
+        with:
+          submodules: true
 
       - name: Build
-        run: |
-          export ZERO_AR_DATE=1
-          cmake -S src -B src/build \
-          -DCMAKE_OSX_ARCHITECTURES="x86_64;arm64" \
-          -DCMAKE_OSX_DEPLOYMENT_TARGET=12.0
-          cmake --build src/build --target rapidyenc_static -j$(sysctl -n hw.ncpu)
-          cp src/build/rapidyenc_static/librapidyenc.a librapidyenc_darwin.a
+        run: make
 
       - name: Upload static library
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
-          name: static
+          name: librapidyenc_darwin
           path: librapidyenc_darwin.a
 
   build_windows:
@@ -47,6 +37,8 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          submodules: true
 
       - uses: msys2/setup-msys2@v2
         with:
@@ -56,17 +48,15 @@ jobs:
             gcc:p
             cmake:p
             ninja:p
+            make:p
 
       - name: Build
-        run: |
-          cmake -S src -B src/build -G Ninja
-          cmake --build src/build --config Release --target rapidyenc_static
-          cp src/build/rapidyenc_static/librapidyenc.a librapidyenc_windows_amd64.a
+        run: mingw32-make.exe
 
       - name: Upload shared library
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
-          name: static
+          name: librapidyenc_windows_amd64
           path: librapidyenc_windows_amd64.a
 
   build_linux:
@@ -82,52 +72,36 @@ jobs:
             library: librapidyenc_linux_arm64.a
 
     steps:
+      - name: Setup Cross Compiler (common)
+        run: |
+          sudo apt-get install --yes --no-install-recommends \
+          build-essential musl-tools
+
+      - name: Setup Cross Compiler (linux/arm64)
+        if: matrix.platform == 'linux/arm64'
+        run: |
+          sudo apt-get install --yes --no-install-recommends \
+          gcc-aarch64-linux-gnu binutils-aarch64-linux-gnu g++-aarch64-linux-gnu gcc-arm-linux-gnueabi
+
       - name: Checkout code
         uses: actions/checkout@v4
-
-      - name: Set up QEMU
-        if: matrix.platform == 'linux/arm64'
-        uses: docker/setup-qemu-action@v3
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Build cross-compilation environment
-        uses: docker/build-push-action@v4
         with:
-          context: .
-          tags: builder/${{ matrix.platform }}:latest
-          platforms: ${{ matrix.platform }}
-          load: true
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-          push: false
+          submodules: true
 
-      - name: Build with Docker
-        uses: addnab/docker-run-action@v3
-        with:
-          image: builder/${{ matrix.platform }}:latest
-          options: |
-            --platform ${{ matrix.platform }}
-            --volume ${{ github.workspace }}:/workspace
-            --workdir /workspace
-          run: |
-            cmake -S src -B src/build \
-            -D CMAKE_BUILD_TYPE=Release
-            cmake --build src/build --target rapidyenc_static -j$(sysctl -n hw.ncpu)
-            cp src/build/rapidyenc_static/librapidyenc.a ${{ matrix.library }}
+      - name: Build
+        run: make ${{ matrix.platform }}
 
       - name: Upload static library
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
-          name: static
+          name: ${{ matrix.library }}
           path: ${{ matrix.library }}
 
   test:
     name: Test ${{ matrix.os }} go/${{ matrix.go }}
     strategy:
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
+        os: [ubuntu-latest, ubuntu-24.04-arm, macos-latest, windows-latest]
         go: [1.22]
     runs-on: ${{ matrix.os }}
     needs: [build_linux, build_macos, build_windows]
@@ -138,17 +112,16 @@ jobs:
         uses: actions/setup-go@v4
         with:
           go-version: ${{ matrix.go }}
-      - uses: actions/download-artifact@v3
+      - uses: actions/download-artifact@v4
         with:
-          name: static
-          path: lib
+          pattern: librapidyenc_*
+          merge-multiple: true
       - name: Run tests
         run: go run gotest.tools/gotestsum@latest --junitfile unit-tests.xml --format pkgname -- ./...
       - name: Test Summary
         uses: test-summary/action@v2
         with:
           paths: "unit-tests.xml"
-        if: always()
 
   publish:
     name: Publish rapidyenc build
@@ -166,9 +139,10 @@ jobs:
         uses: actions/checkout@v4
         with:
           ref: ${{ github.head_ref }}
-      - uses: actions/download-artifact@v3
+      - uses: actions/download-artifact@v4
         with:
-          name: static
+          pattern: librapidyenc_*
+          merge-multiple: true
       - uses: stefanzweifel/git-auto-commit-action@v5
         with:
           file_pattern: '*.a'
