@@ -14,13 +14,11 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          submodules: true
 
       - name: Build
-        run: |
-          export ZERO_AR_DATE=1
-          cmake -S src -B src/build -DCMAKE_TOOLCHAIN_FILE=../../toolchain-darwin.cmake
-          cmake --build src/build --target rapidyenc_static -j$(sysctl -n hw.ncpu)
-          cp src/build/rapidyenc_static/librapidyenc.a librapidyenc_darwin.a
+        run: make
 
       - name: Upload static library
         uses: actions/upload-artifact@v4
@@ -39,6 +37,8 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          submodules: true
 
       - uses: msys2/setup-msys2@v2
         with:
@@ -50,10 +50,7 @@ jobs:
             ninja:p
 
       - name: Build
-        run: |
-          cmake -S src -B src/build -G Ninja
-          cmake --build src/build --config Release --target rapidyenc_static
-          cp src/build/rapidyenc_static/librapidyenc.a librapidyenc_windows_amd64.a
+        run: make
 
       - name: Upload shared library
         uses: actions/upload-artifact@v4
@@ -72,7 +69,6 @@ jobs:
             library: librapidyenc_linux_amd64.a
           - platform: linux/arm64
             library: librapidyenc_linux_arm64.a
-            toolchain: ../../toolchain-linux-arm64.cmake
 
     steps:
       - name: Setup Cross Compiler (common)
@@ -88,12 +84,11 @@ jobs:
 
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          submodules: true
 
       - name: Build
-        run: |
-          cmake -S src -B src/build -DCMAKE_TOOLCHAIN_FILE=${{ matrix.toolchain }}
-          cmake --build src/build --config Release --target rapidyenc_static -j $(nproc)
-          cp src/build/rapidyenc_static/librapidyenc.a ${{ matrix.library }}
+        run: make ${{ matrix.platform }}
 
       - name: Upload static library
         uses: actions/upload-artifact@v4
@@ -126,7 +121,6 @@ jobs:
         uses: test-summary/action@v2
         with:
           paths: "unit-tests.xml"
-        if: always()
 
   publish:
     name: Publish rapidyenc build
