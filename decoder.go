@@ -395,11 +395,15 @@ var (
 
 var decodeInitOnce sync.Once
 
-// DecodeIncremental stops decoding when a yEnc/NNTP end sequence is found
-func DecodeIncremental(dst, src []byte, state *State) (nDst, nSrc int, end End, err error) {
+func maybeInitDecode() {
 	decodeInitOnce.Do(func() {
 		C.rapidyenc_decode_init()
 	})
+}
+
+// DecodeIncremental stops decoding when a yEnc/NNTP end sequence is found
+func DecodeIncremental(dst, src []byte, state *State) (nDst, nSrc int, end End, err error) {
+	maybeInitDecode()
 
 	if len(src) == 0 {
 		return 0, 0, EndNone, nil
