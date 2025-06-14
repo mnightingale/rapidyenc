@@ -13,8 +13,19 @@ import (
 	"unsafe"
 )
 
+// MaxLength returns the maximum possible length of yEnc encoded output given the length of the unencoded data and line length.
+// This function also includes additional padding needed by rapidyenc's implementation.
 func MaxLength(length, lineLength int) int {
-	return int(C.rapidyenc_encode_max_length(C.size_t(length), C.int(lineLength)))
+	ret := length * 2 // all characters escaped
+	ret += 2          // allocation for offset and that a newline may occur early
+	ret += 64         // allocation for YMM overflowing
+
+	// add newlines, considering the possibility of all chars escaped
+	if lineLength == 128 {
+		// optimize common case
+		return ret + 2*(length>>6)
+	}
+	return ret + 2*((length*2)/lineLength)
 }
 
 type Encoder struct {
