@@ -29,10 +29,14 @@ func NewEncoder() *Encoder {
 
 var encodeInitOnce sync.Once
 
-func (e *Encoder) Encode(src []byte) []byte {
+func maybeInitEncode() {
 	encodeInitOnce.Do(func() {
 		C.rapidyenc_encode_init()
 	})
+}
+
+func (e *Encoder) Encode(src []byte) []byte {
+	maybeInitEncode()
 
 	dst := make([]byte, MaxLength(len(src), e.LineLength))
 
