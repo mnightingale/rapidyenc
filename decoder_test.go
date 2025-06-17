@@ -12,10 +12,7 @@ import (
 )
 
 func TestDecode(t *testing.T) {
-	space := make([]byte, 800000)
-	for i := range space {
-		space[i] = 0x20
-	}
+	space := bytes.Repeat([]byte(" "), 800000)
 
 	cases := []struct {
 		name string
