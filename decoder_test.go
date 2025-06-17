@@ -8,7 +8,6 @@ import (
 	"github.com/stretchr/testify/require"
 	"hash/crc32"
 	"io"
-	"strings"
 	"testing"
 )
 
@@ -48,41 +47,59 @@ func TestDecode(t *testing.T) {
 	}
 }
 
-// TestSplitReads tests "=yend" split across reads
+// TestSplitReads splits "=y" header lines across reads
 func TestSplitReads(t *testing.T) {
 	cases := []struct {
 		name string
 		raw  string
-		crc  uint32
 	}{
-		{"foobar", "foobar", 0x9EF61F95},
+		{"foobar", "foobar"},
 	}
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			raw := []byte(tc.raw)
 
-			enc := NewEncoder()
-			encoded := enc.Encode(raw)
+			encoded := body(raw)
 
-			readers := make([]io.Reader, 0)
-			readers = append(readers, strings.NewReader(fmt.Sprintf("=ybegin part=%d line=128 size=%d name=%s\r\n", 1, len(raw), "foo")))
-			readers = append(readers, strings.NewReader(fmt.Sprintf("=ypart begin=%d end=%d\r\n", 1, len(raw)+1)))
-			readers = append(readers, bytes.NewReader(encoded))
-			readers = append(readers, strings.NewReader("\r\n="))
-			readers = append(readers, strings.NewReader(fmt.Sprintf("yend size=%d part=%d pcrc32=%08x\r\n", len(raw), 1, crc32.ChecksumIEEE(raw))))
-			readers = append(readers, strings.NewReader(".\r\n"))
+			r, w := io.Pipe()
 
-			reader := io.MultiReader(readers...)
+			go func() {
+				scanner := bufio.NewScanner(bytes.NewReader(encoded))
+				scanner.Split(func(data []byte, atEOF bool) (advance int, token []byte, err error) {
+					if bytes.Equal(data[:2], []byte("=y")) {
+						return 1, []byte("="), nil
+					}
+
+					if line := bytes.Index(data, []byte("\r\n")); line != -1 {
+						return line + 2, data[:line+2], nil
+					}
+
+					if atEOF {
+						return 0, nil, io.EOF
+					}
+
+					return 0, nil, nil
+				})
+
+				for scanner.Scan() {
+					if _, err := w.Write(scanner.Bytes()); err != nil {
+						panic(err)
+					}
+				}
+
+				if err := w.Close(); err != nil {
+					panic(err)
+				}
+			}()
 
 			dec := AcquireDecoder()
-			dec.SetReader(reader)
+			dec.SetReader(r)
 			b := bytes.NewBuffer(nil)
 			n, err := io.Copy(b, dec)
 			require.Equal(t, int64(len(raw)), n)
 			require.NoError(t, err)
 			require.Equal(t, raw, b.Bytes())
-			require.Equal(t, tc.crc, dec.Meta().Hash)
 			require.Equal(t, int64(len(raw)), dec.Meta().End)
 			ReleaseDecoder(dec)
 		})

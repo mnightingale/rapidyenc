@@ -220,21 +220,9 @@ transform:
 	for {
 		// Article EOF
 		if bytes.HasPrefix(src[nSrc:], []byte(".\r\n")) {
-			d.m.Hash = d.hash.Sum32()
-			if d.format == FormatUU {
-				return nDst, nSrc + 3, fmt.Errorf("[rapidyenc] uuencode not implemented")
-			} else if !d.begin {
-				err = fmt.Errorf("[rapidyenc] end of article without finding \"=begin\" header: %w", ErrDataMissing)
-			} else if !d.end {
-				err = fmt.Errorf("[rapidyenc] end of article without finding \"=yend\" trailer: %w", ErrDataCorruption)
-			} else if (!d.part && d.m.Size != d.endSize) || (d.endSize != d.actualSize) {
-				err = fmt.Errorf("[rapidyenc] expected size %d but got %d: %w", d.m.Size, d.actualSize, ErrDataCorruption)
-			} else if d.crc && d.expectedCrc != d.m.Hash {
-				err = fmt.Errorf("[rapidyenc] expected decoded data to have CRC32 hash %#08x but got %#08x: %w", d.expectedCrc, d.m.Hash, ErrCrcMismatch)
-			} else {
-				err = io.EOF
-			}
-			return nDst, nSrc + 3, err
+			atEOF = true
+			nSrc += 3
+			break
 		}
 
 		endOfLine := bytes.Index(src[nSrc:], []byte("\r\n"))
@@ -260,7 +248,21 @@ transform:
 	}
 
 	if atEOF {
-		return nDst, nSrc, io.EOF
+		d.m.Hash = d.hash.Sum32()
+		if d.format == FormatUU {
+			return nDst, nSrc, fmt.Errorf("[rapidyenc] uuencode not implemented")
+		} else if !d.begin {
+			err = fmt.Errorf("[rapidyenc] end of article without finding \"=begin\" header: %w", ErrDataMissing)
+		} else if !d.end {
+			err = fmt.Errorf("[rapidyenc] end of article without finding \"=yend\" trailer: %w", ErrDataCorruption)
+		} else if (!d.part && d.m.Size != d.endSize) || (d.endSize != d.actualSize) {
+			err = fmt.Errorf("[rapidyenc] expected size %d but got %d: %w", d.m.Size, d.actualSize, ErrDataCorruption)
+		} else if d.crc && d.expectedCrc != d.m.Hash {
+			err = fmt.Errorf("[rapidyenc] expected decoded data to have CRC32 hash %#08x but got %#08x: %w", d.expectedCrc, d.m.Hash, ErrCrcMismatch)
+		} else {
+			err = io.EOF
+		}
+		return nDst, nSrc, err
 	} else {
 		return nDst, nSrc, transform.ErrShortSrc
 	}
