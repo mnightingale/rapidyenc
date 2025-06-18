@@ -44,12 +44,13 @@ var (
 // The returned Decoder instance may be passed to ReleaseDecoder when it is
 // no longer needed. This allows Decoder recycling, reduces GC pressure
 // and usually improves performance.
-func AcquireDecoder() *Decoder {
-	v := decoderPool.Get()
-	if v == nil {
-		return NewDecoder(defaultBufSize)
+func AcquireDecoder(r io.Reader) *Decoder {
+	if v := decoderPool.Get(); v != nil {
+		dec := v.(*Decoder)
+		dec.Reset(r)
+		return dec
 	}
-	return v.(*Decoder)
+	return NewDecoder(r)
 }
 
 // ReleaseDecoder returns dec acquired via AcquireDecoder to Decoder pool.
@@ -57,23 +58,15 @@ func AcquireDecoder() *Decoder {
 // It is forbidden accessing dec and/or its members after returning
 // it to Decoder pool.
 func ReleaseDecoder(dec *Decoder) {
-	dec.Reset()
+	dec.Reset(nil)
 	decoderPool.Put(dec)
 }
 
 // Meta is the result of parsing the yEnc headers (ybegin, ypart, yend)
-type Meta struct {
-	Size  int64  // Total size of the file
-	Begin int64  // Part begin offset (0-indexed)
-	End   int64  // Part end offset (0-indexed, exclusive)
-	Hash  uint32 // CRC32 hash of the decoded data
-	Name  string // Name of the file
-}
 
 type Decoder struct {
-	r io.Reader
-
-	m Meta
+	r    io.Reader
+	Meta DecodedMeta
 
 	body  bool
 	begin bool
@@ -83,7 +76,6 @@ type Decoder struct {
 
 	State       State
 	format      Format
-	endSize     int64
 	actualSize  int64
 	expectedCrc uint32
 	hash        hash.Hash32
@@ -105,32 +97,24 @@ type Decoder struct {
 	transformComplete bool
 }
 
-func NewDecoder(bufSize int) *Decoder {
+const defaultBufSize = 4096
+
+func NewDecoder(r io.Reader) *Decoder {
 	return &Decoder{
-		dst:  make([]byte, bufSize),
-		src:  make([]byte, bufSize),
+		r:    r,
+		dst:  make([]byte, defaultBufSize),
+		src:  make([]byte, defaultBufSize),
 		hash: crc32.NewIEEE(),
 	}
 }
 
-func (d *Decoder) SetReader(reader io.Reader) {
-	d.r = reader
-}
-
-func (d *Decoder) Meta() Meta {
-	return d.m
-}
-
-const defaultBufSize = 4096
-
 var (
 	ErrDataMissing    = errors.New("no binary data")
-	ErrDataCorruption = errors.New("data corruption detected") // .\r\n reached before =yend
+	ErrDataCorruption = errors.New("data corruption detected") // io.EOF or ".\r\n" reached before =yend
 	ErrCrcMismatch    = errors.New("crc32 mismatch")
 )
 
-func (d *Decoder) Read(p []byte) (int, error) {
-	n, err := 0, error(nil)
+func (d *Decoder) Read(p []byte) (n int, err error) {
 	for {
 		// Copy out any transformed bytes and return the final error if we are done.
 		if d.dst0 != d.dst1 {
@@ -248,17 +232,17 @@ transform:
 	}
 
 	if atEOF {
-		d.m.Hash = d.hash.Sum32()
+		d.Meta.Hash = d.hash.Sum32()
 		if d.format == FormatUU {
 			return nDst, nSrc, fmt.Errorf("[rapidyenc] uuencode not implemented")
 		} else if !d.begin {
 			err = fmt.Errorf("[rapidyenc] end of article without finding \"=begin\" header: %w", ErrDataMissing)
 		} else if !d.end {
 			err = fmt.Errorf("[rapidyenc] end of article without finding \"=yend\" trailer: %w", ErrDataCorruption)
-		} else if (!d.part && d.m.Size != d.endSize) || (d.endSize != d.actualSize) {
-			err = fmt.Errorf("[rapidyenc] expected size %d but got %d: %w", d.m.Size, d.actualSize, ErrDataCorruption)
-		} else if d.crc && d.expectedCrc != d.m.Hash {
-			err = fmt.Errorf("[rapidyenc] expected decoded data to have CRC32 hash %#08x but got %#08x: %w", d.expectedCrc, d.m.Hash, ErrCrcMismatch)
+		} else if (!d.part && d.Meta.FileSize != d.actualSize) || (d.part && d.Meta.PartSize != d.actualSize) {
+			err = fmt.Errorf("[rapidyenc] expected size %d but got %d: %w", d.Meta.PartSize, d.actualSize, ErrDataCorruption)
+		} else if d.crc && d.expectedCrc != d.Meta.Hash {
+			err = fmt.Errorf("[rapidyenc] expected decoded data to have CRC32 hash %#08x but got %#08x: %w", d.expectedCrc, d.Meta.Hash, ErrCrcMismatch)
 		} else {
 			err = io.EOF
 		}
@@ -268,8 +252,8 @@ transform:
 	}
 }
 
-func (d *Decoder) Reset() {
-	d.r = nil
+func (d *Decoder) Reset(r io.Reader) {
+	d.r = r
 	d.src0, d.src1 = 0, 0
 	d.dst0, d.dst1 = 0, 0
 
@@ -281,37 +265,35 @@ func (d *Decoder) Reset() {
 
 	d.State = StateCRLF
 	d.format = FormatUnknown
-	d.endSize = 0
 	d.actualSize = 0
 	d.expectedCrc = 0
 	d.hash.Reset()
-	d.m.Size = 0
-	d.m.Hash = 0
-	d.m.Begin = 0
-	d.m.End = 0
-	d.m.Name = ""
+	d.Meta = DecodedMeta{}
 
 	d.err = nil
 	d.transformComplete = false
 }
 
 func (d *Decoder) processYenc(line []byte) {
+	var err error
 	if bytes.HasPrefix(line, []byte("=ybegin ")) {
 		d.begin = true
-		d.m.Size, _ = extractInt(line, []byte(" size="))
-		d.m.Name, _ = extractString(line, []byte(" name="))
-		if _, err := extractInt(line, []byte(" part=")); err != nil {
+		d.Meta.FileSize, _ = extractInt(line, []byte(" size="))
+		d.Meta.FileName, _ = extractString(line, []byte(" name="))
+		if d.Meta.PartNumber, err = extractInt(line, []byte(" part=")); err != nil {
 			d.body = true
-			d.m.End = d.m.Size
+			d.Meta.PartSize = d.Meta.FileSize
 		}
+		d.Meta.TotalParts, _ = extractInt(line, []byte(" total="))
 	} else if bytes.HasPrefix(line, []byte("=ypart ")) {
 		d.part = true
 		d.body = true
-		if beginPos, err := extractInt(line, []byte(" begin=")); err == nil {
-			d.m.Begin = beginPos - 1
+		var begin int64
+		if begin, err = extractInt(line, []byte(" begin=")); err == nil {
+			d.Meta.Offset = begin - 1
 		}
-		if endPos, err := extractInt(line, []byte(" end=")); err == nil {
-			d.m.End = endPos - 1
+		if end, err := extractInt(line, []byte(" end=")); err == nil && begin > 0 {
+			d.Meta.PartSize = end - d.Meta.Offset
 		}
 	} else if bytes.HasPrefix(line, []byte("=yend ")) {
 		d.end = true
@@ -324,7 +306,7 @@ func (d *Decoder) processYenc(line []byte) {
 			d.expectedCrc = crc
 			d.crc = true
 		}
-		d.endSize, _ = extractInt(line, []byte(" size="))
+		d.Meta.PartSize, _ = extractInt(line, []byte(" size="))
 	}
 }
 

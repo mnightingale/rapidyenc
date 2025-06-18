@@ -6,7 +6,6 @@ import (
 	"crypto/rand"
 	"fmt"
 	"github.com/stretchr/testify/require"
-	"hash/crc32"
 	"io"
 	"testing"
 )
@@ -28,17 +27,16 @@ func TestDecode(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			raw := []byte(tc.raw)
 
-			encoded := bytes.NewReader(body(raw))
+			encoded := body(raw)
 
-			dec := AcquireDecoder()
-			dec.SetReader(encoded)
+			dec := AcquireDecoder(encoded)
 			b := bytes.NewBuffer(nil)
 			n, err := io.Copy(b, dec)
 			require.Equal(t, int64(len(raw)), n)
 			require.NoError(t, err)
 			require.Equal(t, raw, b.Bytes())
-			require.Equal(t, tc.crc, dec.Meta().Hash)
-			require.Equal(t, int64(len(raw)), dec.Meta().End)
+			require.Equal(t, tc.crc, dec.Meta.Hash)
+			require.Equal(t, int64(len(raw)), dec.Meta.End())
 			ReleaseDecoder(dec)
 		})
 	}
@@ -62,7 +60,7 @@ func TestSplitReads(t *testing.T) {
 			r, w := io.Pipe()
 
 			go func() {
-				scanner := bufio.NewScanner(bytes.NewReader(encoded))
+				scanner := bufio.NewScanner(encoded)
 				scanner.Split(func(data []byte, atEOF bool) (advance int, token []byte, err error) {
 					if bytes.Equal(data[:2], []byte("=y")) {
 						return 1, []byte("="), nil
@@ -90,56 +88,55 @@ func TestSplitReads(t *testing.T) {
 				}
 			}()
 
-			dec := AcquireDecoder()
-			dec.SetReader(r)
+			dec := AcquireDecoder(r)
 			b := bytes.NewBuffer(nil)
 			n, err := io.Copy(b, dec)
 			require.Equal(t, int64(len(raw)), n)
 			require.NoError(t, err)
 			require.Equal(t, raw, b.Bytes())
-			require.Equal(t, int64(len(raw)), dec.Meta().End)
+			require.Equal(t, int64(len(raw)), dec.Meta.End())
 			ReleaseDecoder(dec)
 		})
 	}
 }
 
-func BenchmarkSingle(b *testing.B) {
+func BenchmarkDecoder(b *testing.B) {
 	raw := make([]byte, 1024*1024)
 	_, err := rand.Read(raw)
 	require.NoError(b, err)
 
-	r := bytes.NewReader(body(raw))
+	r := body(raw)
 
-	dec := AcquireDecoder()
+	dec := AcquireDecoder(r)
 
-	for i := 0; i < b.N; i++ {
-		dec.SetReader(r)
-		io.Copy(io.Discard, dec)
-		r.Seek(0, io.SeekStart)
-		dec.Reset()
+	for b.Loop() {
+		_, err = io.Copy(io.Discard, dec)
+		require.NoError(b, err)
+		_, err = r.Seek(0, io.SeekStart)
+		require.NoError(b, err)
+		dec.Reset(r)
 	}
 
 	ReleaseDecoder(dec)
 }
 
-func body(raw []byte) []byte {
-	var b bytes.Buffer
-	w := bufio.NewWriter(&b)
-	enc := NewEncoder()
-	encoded := enc.Encode(raw)
+func body(raw []byte) io.ReadSeeker {
+	w := new(bytes.Buffer)
 
-	fmt.Fprintf(w, "=ybegin part=%d line=128 size=%d name=%s\r\n", 1, len(raw), "foo")
-	fmt.Fprintf(w, "=ypart begin=%d end=%d\r\n", 1, len(raw)+1)
-	w.Write(encoded)
-	w.Write([]byte("\r\n"))
-	fmt.Fprintf(w, "=yend size=%d part=%d pcrc32=%08x\r\n", len(raw), 1, crc32.ChecksumIEEE(raw))
-	fmt.Fprintf(w, ".\r\n")
+	enc := NewEncoder(w, Meta{
+		FileName: "filename",
+		FileSize: int64(len(raw)),
+		PartSize: int64(len(raw)),
+	})
 
-	if err := w.Flush(); err != nil {
+	if _, err := io.Copy(enc, bytes.NewReader(raw)); err != nil {
+		panic(err)
+	}
+	if err := enc.Close(); err != nil {
 		panic(err)
 	}
 
-	return b.Bytes()
+	return bytes.NewReader(w.Bytes())
 }
 
 func TestExtractString(t *testing.T) {
