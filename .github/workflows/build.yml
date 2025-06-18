@@ -102,7 +102,7 @@ jobs:
     strategy:
       matrix:
         os: [ubuntu-latest, ubuntu-24.04-arm, macos-latest, windows-latest]
-        go: [1.22]
+        go: [1.24]
     runs-on: ${{ matrix.os }}
     needs: [build_linux, build_macos, build_windows]
     steps:
