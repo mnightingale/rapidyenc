@@ -31,6 +31,10 @@ type Encoder struct {
 	hashErrs errgroup.Group
 }
 
+// NewEncoder returns a new [Encoder].
+// Writes to the returned writer are yEnc encoded and written to w.
+//
+// It is the caller's responsibility to call Close on the [Encoder] when done.
 func NewEncoder(w io.Writer, m Meta) (e *Encoder) {
 	maybeInitEncode()
 
@@ -44,6 +48,9 @@ func NewEncoder(w io.Writer, m Meta) (e *Encoder) {
 	return
 }
 
+// Reset discards the [Encoder] e's state and makes it equivalent to the
+// result of its original state from [NewEncoder], but writing to w instead.
+// This permits reusing a [Encoder] rather than allocating a new one.
 func (e *Encoder) Reset(w io.Writer, meta Meta) {
 	e.writeMu.Lock()
 	defer e.writeMu.Unlock()
@@ -57,6 +64,8 @@ func (e *Encoder) Reset(w io.Writer, meta Meta) {
 	e.hashErrs = errgroup.Group{}
 }
 
+// Write writes a yEnc encoded form of p to the underlying [io.Writer]. The
+// encoded bytes are not necessarily flushed until the [Encoder] is closed.
 func (e *Encoder) Write(p []byte) (n int, err error) {
 	e.writeMu.Lock()
 	defer e.writeMu.Unlock()
