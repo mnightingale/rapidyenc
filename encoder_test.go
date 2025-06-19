@@ -71,6 +71,7 @@ func BenchmarkEncoder(b *testing.B) {
 
 	enc := NewEncoder(io.Discard, meta)
 
+	b.ResetTimer()
 	for b.Loop() {
 		_, err = io.Copy(enc, r)
 		require.NoError(b, err)
