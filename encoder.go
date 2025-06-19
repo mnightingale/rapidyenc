@@ -91,9 +91,8 @@ func (e *Encoder) Write(p []byte) (n int, err error) {
 	if len(p) > 0 {
 		e.processed += int64(len(p))
 
-		maxLength := maxLength(len(p), e.lineLength)
-		if maxLength > cap(e.buf) {
-			e.buf = make([]byte, maxLength)
+		if grow := maxLength(len(p), e.lineLength) - len(e.buf); grow > 0 {
+			e.buf = append(e.buf, make([]byte, grow)...)
 		}
 
 		buf := e.buf
