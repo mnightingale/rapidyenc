@@ -109,6 +109,7 @@ func BenchmarkDecoder(b *testing.B) {
 
 	dec := AcquireDecoder(r)
 
+	b.ResetTimer()
 	for b.Loop() {
 		_, err = io.Copy(io.Discard, dec)
 		require.NoError(b, err)
