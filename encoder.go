@@ -80,16 +80,16 @@ func (e *Encoder) Write(p []byte) (n int, err error) {
 		return 0, err
 	}
 
+	// Previous Write ended with a space or tab, so we need to include it (without escaping)
+	if len(e.endByte) > 0 {
+		if _, err := e.w.Write(e.endByte); err != nil {
+			return 0, err
+		}
+		e.endByte = e.endByte[:0]
+	}
+
 	if len(p) > 0 {
 		e.processed += int64(len(p))
-
-		// Previous Write ended with a space or tab, so we need to include it (without escaping)
-		if len(e.endByte) > 0 {
-			if _, err := e.w.Write(e.endByte); err != nil {
-				return 0, err
-			}
-			e.endByte = e.endByte[:0]
-		}
 
 		maxLength := maxLength(len(p), e.lineLength)
 		if maxLength > cap(e.buf) {
