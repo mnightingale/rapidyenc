@@ -5,6 +5,7 @@ package rapidyenc
 */
 import "C"
 import (
+	"errors"
 	"fmt"
 	"golang.org/x/sync/errgroup"
 	"hash"
@@ -173,8 +174,12 @@ func maybeInitEncode() {
 // Encode yEnc encodes the src buffer without adding any =y headers
 //
 // Deprecated: use Encoder as an io.WriteCloser which includes yEnc headers
-func (e *Encoder) Encode(src []byte) []byte {
-	dst := make([]byte, maxLength(len(src), e.lineLength))
+func Encode(src []byte) ([]byte, error) {
+	if len(src) == 0 {
+		return nil, errors.New("empty source")
+	}
+
+	dst := make([]byte, maxLength(len(src), 128))
 
 	length := C.rapidyenc_encode(
 		unsafe.Pointer(&src[0]),
@@ -182,7 +187,7 @@ func (e *Encoder) Encode(src []byte) []byte {
 		C.size_t(len(src)),
 	)
 
-	return dst[:length]
+	return dst[:length], nil
 }
 
 func (e *Encoder) writeHeader() (int, error) {
