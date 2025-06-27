@@ -107,14 +107,16 @@ func (e *Encoder) Write(p []byte) (n int, err error) {
 
 		buf := e.buf
 
+		colTmp := C.int(e.column)
 		length := C.rapidyenc_encode_ex(
 			C.int(e.lineLength),
-			(*C.int)(unsafe.Pointer(&e.column)),
+			(*C.int)(unsafe.Pointer(&colTmp)),
 			unsafe.Pointer(&p[0]),
 			unsafe.Pointer(&buf[0]),
 			C.size_t(len(p)),
 			C.int(0),
 		)
+		e.column = int(colTmp)
 
 		if length > 0 {
 			// If the last character is '\t' or ' ' then if this is the last write it will need escaping.
