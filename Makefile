@@ -52,9 +52,11 @@ linux/arm64:
 
 .PHONY: darwin
 darwin:
-	cmake -S ${SRC_PATH} -B ${BUILD_PATH} -DCMAKE_TOOLCHAIN_FILE=../../toolchain-darwin.cmake
-	ZERO_AR_DATE=1 cmake --build ${BUILD_PATH} --target rapidyenc_static -j $(shell sysctl -n hw.ncpu)
-	cp ${BUILD_PATH}/rapidyenc_static/librapidyenc.a librapidyenc_darwin.a
+	cmake -S ${SRC_PATH} -B ${BUILD_PATH}/amd64 -DCMAKE_TOOLCHAIN_FILE=${PWD}/toolchain-darwin-amd64.cmake
+	ZERO_AR_DATE=1 cmake --build ${BUILD_PATH}/amd64 --target rapidyenc_static -j $(shell sysctl -n hw.ncpu)
+	cmake -S ${SRC_PATH} -B ${BUILD_PATH}/arm64 -DCMAKE_TOOLCHAIN_FILE=${PWD}/toolchain-darwin-arm64.cmake
+	ZERO_AR_DATE=1 cmake --build ${BUILD_PATH}/arm64 --target rapidyenc_static -j $(shell sysctl -n hw.ncpu)
+	lipo -create -output librapidyenc_darwin.a ${BUILD_PATH}/amd64/rapidyenc_static/librapidyenc.a ${BUILD_PATH}/arm64/rapidyenc_static/librapidyenc.a
 
 .PHONY: windows/amd64
 windows/amd64:
