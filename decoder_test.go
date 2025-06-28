@@ -27,7 +27,8 @@ func TestDecode(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			raw := []byte(tc.raw)
 
-			encoded := body(raw)
+			encoded, err := body(raw)
+			require.NoError(t, err)
 
 			dec := AcquireDecoder(encoded)
 			b := bytes.NewBuffer(nil)
@@ -55,7 +56,8 @@ func TestSplitReads(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			raw := []byte(tc.raw)
 
-			encoded := body(raw)
+			encoded, err := body(raw)
+			require.NoError(t, err)
 
 			r, w := io.Pipe()
 
@@ -105,7 +107,8 @@ func BenchmarkDecoder(b *testing.B) {
 	_, err := rand.Read(raw)
 	require.NoError(b, err)
 
-	r := body(raw)
+	r, err := body(raw)
+	require.NoError(b, err)
 
 	dec := AcquireDecoder(r)
 
@@ -121,23 +124,28 @@ func BenchmarkDecoder(b *testing.B) {
 	ReleaseDecoder(dec)
 }
 
-func body(raw []byte) io.ReadSeeker {
+func body(raw []byte) (io.ReadSeeker, error) {
 	w := new(bytes.Buffer)
 
-	enc := NewEncoder(w, Meta{
-		FileName: "filename",
-		FileSize: int64(len(raw)),
-		PartSize: int64(len(raw)),
+	enc, err := NewEncoder(w, Meta{
+		FileName:   "filename",
+		FileSize:   int64(len(raw)),
+		PartSize:   int64(len(raw)),
+		PartNumber: 1,
+		TotalParts: 1,
 	})
+	if err != nil {
+		return nil, err
+	}
 
 	if _, err := io.Copy(enc, bytes.NewReader(raw)); err != nil {
-		panic(err)
+		return nil, err
 	}
 	if err := enc.Close(); err != nil {
-		panic(err)
+		return nil, err
 	}
 
-	return bytes.NewReader(w.Bytes())
+	return bytes.NewReader(w.Bytes()), nil
 }
 
 func TestExtractString(t *testing.T) {

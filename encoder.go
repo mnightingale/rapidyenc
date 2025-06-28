@@ -36,7 +36,7 @@ type Encoder struct {
 // Writes to the returned writer are yEnc encoded and written to w.
 //
 // It is the caller's responsibility to call Close on the [Encoder] when done.
-func NewEncoder(w io.Writer, m Meta) (e *Encoder) {
+func NewEncoder(w io.Writer, m Meta) (e *Encoder, err error) {
 	maybeInitEncode()
 
 	e = new(Encoder)
@@ -44,7 +44,9 @@ func NewEncoder(w io.Writer, m Meta) (e *Encoder) {
 	e.hash = crc32.NewIEEE()
 	e.endByte = make([]byte, 0, 1)
 
-	e.Reset(w, m)
+	if err := e.Reset(w, m); err != nil {
+		return nil, err
+	}
 
 	return
 }
@@ -52,7 +54,11 @@ func NewEncoder(w io.Writer, m Meta) (e *Encoder) {
 // Reset discards the [Encoder] e's state and makes it equivalent to the
 // result of its original state from [NewEncoder], but writing to w instead.
 // This permits reusing a [Encoder] rather than allocating a new one.
-func (e *Encoder) Reset(w io.Writer, meta Meta) {
+func (e *Encoder) Reset(w io.Writer, meta Meta) error {
+	if err := meta.validate(); err != nil {
+		return err
+	}
+
 	e.writeMu.Lock()
 	defer e.writeMu.Unlock()
 
@@ -63,6 +69,8 @@ func (e *Encoder) Reset(w io.Writer, meta Meta) {
 	e.endByte = e.endByte[:0]
 	e.processed = 0
 	e.hashErrs = errgroup.Group{}
+
+	return nil
 }
 
 // Write writes a yEnc encoded form of p to the underlying [io.Writer]. The

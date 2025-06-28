@@ -1,5 +1,7 @@
 package rapidyenc
 
+import "errors"
+
 type Meta struct {
 	FileName   string
 	FileSize   int64 // Total size of the file
@@ -22,4 +24,36 @@ func (m Meta) End() int64 {
 type DecodedMeta struct {
 	Meta
 	Hash uint32 // CRC32 hash of the decoded data
+}
+
+var (
+	errFileNameEmpty = errors.New("file name is empty")
+	errFileSize      = errors.New("file size is less than or equal to zero")
+	errPartNumber    = errors.New("part number is less than or equal to zero")
+	errTotalParts    = errors.New("total tarts is less than part number")
+	errOffset        = errors.New("offset is less than zero")
+	errPartSize      = errors.New("part size is less than or equal to zero")
+)
+
+func (m Meta) validate() error {
+	if len(m.FileName) == 0 {
+		return errFileNameEmpty
+	}
+	if m.FileSize <= 0 {
+		return errFileSize
+	}
+	if m.PartNumber <= 0 {
+		return errPartNumber
+	}
+	if m.TotalParts < m.PartNumber {
+		return errTotalParts
+	}
+	if m.Offset < 0 {
+		return errOffset
+	}
+	if m.PartSize <= 0 {
+		return errPartSize
+	}
+
+	return nil
 }

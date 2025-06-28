@@ -29,12 +29,15 @@ func TestEncoderSimple(t *testing.T) {
 			input := bytes.NewReader(tc.input)
 
 			encoded := new(bytes.Buffer)
-			w := NewEncoder(encoded, Meta{
-				FileName: "filename",
-				FileSize: input.Size(),
-				PartSize: input.Size(),
+			w, err := NewEncoder(encoded, Meta{
+				FileName:   "filename",
+				FileSize:   input.Size(),
+				PartSize:   input.Size(),
+				PartNumber: 1,
+				TotalParts: 1,
 			})
-			_, err := io.Copy(w, input)
+			require.NoError(t, err)
+			_, err = io.Copy(w, input)
 			require.NoError(t, err)
 			err = w.Close()
 			require.NoError(t, err)
@@ -69,7 +72,8 @@ func BenchmarkEncoder(b *testing.B) {
 		PartSize: int64(len(raw)),
 	}
 
-	enc := NewEncoder(io.Discard, meta)
+	enc, err := NewEncoder(io.Discard, meta)
+	require.NoError(b, err)
 
 	b.ResetTimer()
 	for b.Loop() {
