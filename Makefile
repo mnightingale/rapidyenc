@@ -60,7 +60,7 @@ darwin:
 
 .PHONY: windows/amd64
 windows/amd64:
-	cmake -S ${SRC_PATH} -B ${BUILD_PATH} -G Ninja
+	cmake -S ${SRC_PATH} -B ${BUILD_PATH} -G Ninja -DCMAKE_TOOLCHAIN_FILE=${PWD}/toolchain-windows-amd64.cmake
 	cmake --build ${BUILD_PATH} --target rapidyenc_static
 	cp ${BUILD_PATH}/rapidyenc_static/librapidyenc.a librapidyenc_windows_amd64.a
 
