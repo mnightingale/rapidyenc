@@ -73,11 +73,17 @@ func (e *Encoder) Reset(w io.Writer, meta Meta) error {
 	return nil
 }
 
+var errWriterNil = errors.New("writer is nil")
+
 // Write writes a yEnc encoded form of p to the underlying [io.Writer]. The
 // encoded bytes are not necessarily flushed until the [Encoder] is closed.
 func (e *Encoder) Write(p []byte) (n int, err error) {
 	e.writeMu.Lock()
 	defer e.writeMu.Unlock()
+
+	if e.w == nil {
+		return 0, errWriterNil
+	}
 
 	n = len(p)
 
@@ -152,6 +158,11 @@ func (e *Encoder) Write(p []byte) (n int, err error) {
 func (e *Encoder) Close() error {
 	e.writeMu.Lock()
 	defer e.writeMu.Unlock()
+
+	if e.w == nil {
+		return errWriterNil
+	}
+	defer func() { e.w = nil }()
 
 	if len(e.endByte) > 0 {
 		if _, err := e.w.Write([]byte{'=', e.endByte[0] + 64}); err != nil {
