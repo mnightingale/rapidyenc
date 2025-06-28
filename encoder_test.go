@@ -67,9 +67,11 @@ func BenchmarkEncoder(b *testing.B) {
 	r := bytes.NewReader(raw)
 
 	meta := Meta{
-		FileName: "filename",
-		FileSize: int64(len(raw)),
-		PartSize: int64(len(raw)),
+		FileName:   "filename",
+		FileSize:   int64(len(raw)),
+		PartSize:   int64(len(raw)),
+		PartNumber: 1,
+		TotalParts: 1,
 	}
 
 	enc, err := NewEncoder(io.Discard, meta)
