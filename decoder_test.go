@@ -6,6 +6,7 @@ import (
 	"crypto/rand"
 	"fmt"
 	"io"
+	"os"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -39,6 +40,32 @@ func TestDecode(t *testing.T) {
 			require.Equal(t, raw, b.Bytes())
 			require.Equal(t, tc.crc, dec.Meta.Hash)
 			require.Equal(t, int64(len(raw)), dec.Meta.End())
+		})
+	}
+}
+
+func TestDecodeUU(t *testing.T) {
+	cases := []struct {
+		name string
+		path string
+	}{
+		{"logo_full", "testdata/logo_full.uu"},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			f, err := os.Open(tc.path)
+			require.NoError(t, err)
+			defer f.Close()
+
+			raw, err := io.ReadAll(f)
+			require.NoError(t, err)
+
+			dec := NewDecoder(bytes.NewReader(raw))
+			b := bytes.NewBuffer(nil)
+			_, err = io.Copy(b, dec)
+			require.Error(t, err, ErrUU)
+			require.Equal(t, raw, b.Bytes()) // uudecode is not implemented; just test it is unchanged
 		})
 	}
 }

@@ -63,6 +63,7 @@ var (
 	ErrDataMissing    = errors.New("no binary data")
 	ErrDataCorruption = errors.New("data corruption detected") // io.EOF or ".\r\n" reached before =yend
 	ErrCrcMismatch    = errors.New("crc32 mismatch")
+	ErrUU             = errors.New("data is uuencoded")
 )
 
 func (d *Decoder) Read(p []byte) (int, error) {
@@ -152,7 +153,7 @@ func (d *Decoder) metaError() error {
 		return io.ErrUnexpectedEOF
 	}
 	if d.format == FormatUU {
-		return fmt.Errorf("[rapidyenc] uuencode not implemented")
+		return ErrUU
 	}
 	if !d.begin {
 		return fmt.Errorf("[rapidyenc] end of article without finding \"=begin\" header: %w", ErrDataMissing)
@@ -242,17 +243,21 @@ func detectFormat(line []byte) Format {
 	}
 
 	length := len(line)
-	if (length == 62 || length == 63) && (line[62] == '\n' || line[62] == '\r') && line[0] == 'M' {
+	if (length == 60 || length == 61) && line[0] == 'M' {
 		return FormatUU
 	}
 
 	if bytes.HasPrefix(line, []byte("begin ")) {
 		ok := true
-		pos := len("begin ")
-		for pos < len(line) && line[pos] != ' ' {
-			pos++
+		line := bytes.TrimSpace(line[len("begin "):])
 
-			if line[pos] < '0' || line[pos] > '7' {
+		for pos := 0; pos < len(line); pos++ {
+			char := line[pos]
+			if char == ' ' {
+				break
+			}
+
+			if char < '0' || char > '7' {
 				ok = false
 				break
 			}
