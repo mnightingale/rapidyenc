@@ -3,6 +3,7 @@
 package rapidyenc
 
 import (
+	"bytes"
 	"math/bits"
 	"simd/archsimd"
 )
@@ -94,26 +95,31 @@ func init() {
 	broadcastNeg106 = archsimd.BroadcastInt8x32(-42 - 64)
 }
 
-func decodeSIMDAVX2(dest, src []byte, srcLength int, escFirst *uint8, nextMask *uint16) (consumed, produced int) {
-	if len(dest) < srcLength {
+func decodeSIMDAVX2(dest, src []byte, srcLength int, escFirst uint64, nextMask uint16) (int, int, uint64, uint16) {
+	if len(dest) < len(src) || len(src) < srcLength {
 		panic("slice y is shorter than slice x")
 	}
+
+	consumed := 0
+	produced := 0
+
+	dest = dest[:len(src)]
 
 	// TODO: need this?
 	isRaw := true
 	searchEnd := true
 
 	var yencOffset archsimd.Int8x32
-	if *escFirst > 0 {
+	if escFirst > 0 {
 		yencOffset = broadcastEscapeFirst
 	} else {
 		yencOffset = broadcastNeg42
 	}
 	var minMask archsimd.Int8x32
-	if nextMask != nil && isRaw {
-		if *nextMask == 1 {
+	if isRaw && nextMask > 0 {
+		if nextMask == 1 {
 			minMask = minMask1
-		} else if *nextMask == 2 {
+		} else if nextMask == 2 {
 			minMask = minMask2
 		} else {
 			minMask = broadcastDOT
@@ -123,14 +129,15 @@ func decodeSIMDAVX2(dest, src []byte, srcLength int, escFirst *uint8, nextMask *
 	}
 
 	// set this before the loop because we can't check src after it's been overwritten
-	decoderSetNextMask(isRaw, src, consumed, nextMask)
+	nextMask = decoderSetNextMask(isRaw, src, consumed, nextMask)
 
 	var oDataA, oDataB archsimd.Int8x32
 	var cmpA, cmpB archsimd.Mask8x32
 
 	mask := uint64(0)
 
-	for ; consumed < srcLength; consumed += 32 * 2 {
+	for ; consumed+64 < srcLength; consumed += 64 {
+		d := dest[produced : produced+64]
 		oDataA = archsimd.LoadUint8x32Slice(src[consumed:]).AsInt8x32()
 		oDataB = archsimd.LoadUint8x32Slice(src[consumed+32:]).AsInt8x32()
 
@@ -216,7 +223,7 @@ func decodeSIMDAVX2(dest, src []byte, srcLength int, escFirst *uint8, nextMask *
 							// terminator found
 							// there's probably faster ways to do this, but reverting to scalar code should be good enough
 							//consumed += consumed
-							*nextMask = decoderSetNextMask2(isRaw, src, consumed, uint16(mask))
+							nextMask = decoderSetNextMask2(isRaw, src, consumed, uint16(mask))
 							break
 						}
 					}
@@ -246,7 +253,7 @@ func decodeSIMDAVX2(dest, src []byte, srcLength int, escFirst *uint8, nextMask *
 							endFound = a.Or(b).ToBits() > 0
 						}
 						if endFound {
-							*nextMask = decoderSetNextMask2(isRaw, src, consumed, uint16(mask))
+							nextMask = decoderSetNextMask2(isRaw, src, consumed, uint16(mask))
 							break
 						}
 					}
@@ -258,11 +265,11 @@ func decodeSIMDAVX2(dest, src []byte, srcLength int, escFirst *uint8, nextMask *
 				}
 			}
 
-			maskEqShift1 := (maskEq << 1) + uint64(*escFirst)
+			maskEqShift1 := (maskEq << 1) + escFirst
 			if mask&maskEqShift1 != 0 {
 				maskEq = fixEqMask(maskEq, maskEqShift1)
-				mask &= ^uint64(*escFirst)
-				*escFirst = uint8(maskEq >> 63)
+				mask &= ^escFirst
+				escFirst = maskEq >> 63
 				// next, eliminate anything following a `=` from the special char mask; this eliminates cases of `=\r` so that they aren't removed
 				maskEq <<= 1
 				mask &= ^maskEq
@@ -277,7 +284,7 @@ func decodeSIMDAVX2(dest, src []byte, srcLength int, escFirst *uint8, nextMask *
 					dataB = oDataB.Add(broadcastNeg106.Merge(broadcastNeg42, vMaskEqB))
 				}
 			} else {
-				*escFirst = uint8(maskEq >> 63)
+				escFirst = maskEq >> 63
 
 				{
 					vecA := broadcastNeg106.Merge(
@@ -296,7 +303,7 @@ func decodeSIMDAVX2(dest, src []byte, srcLength int, escFirst *uint8, nextMask *
 				}
 			}
 
-			if *escFirst > 0 {
+			if escFirst > 0 {
 				yencOffset = broadcastEscapeFirst
 			} else {
 				yencOffset = broadcastNeg42
@@ -309,11 +316,11 @@ func decodeSIMDAVX2(dest, src []byte, srcLength int, escFirst *uint8, nextMask *
 					SetHi(archsimd.LoadUint8x16(&compactLUT[((mask>>12)&0x7fff0)/16])).
 					AsInt8x32())
 				// Store lower 128 bits
-				dataA.GetLo().AsUint8x16().StoreSlice(dest[produced:])
-				produced += 16 - bits.OnesCount64(mask&0xffff)
+				dataA.GetLo().AsUint8x16().StoreSlice(d)
+				a := bits.OnesCount64(mask & 0xffff)
 				// Store upper 128 bits
-				dataA.GetHi().AsUint8x16().StoreSlice(dest[produced:])
-				produced += 16 - bits.OnesCount64(mask&0xffff0000)
+				dataA.GetHi().AsUint8x16().StoreSlice(d[16-a:])
+				a += bits.OnesCount64(mask & 0xffff0000)
 
 				mask >>= 28
 				dataB = dataB.PermuteOrZeroGrouped(new(archsimd.Uint8x32).
@@ -321,39 +328,41 @@ func decodeSIMDAVX2(dest, src []byte, srcLength int, escFirst *uint8, nextMask *
 					SetHi(archsimd.LoadUint8x16(&compactLUT[((mask>>16)&0x7fff0)/16])).
 					AsInt8x32())
 				// Store lower 128 bits
-				dataB.GetLo().AsUint8x16().StoreSlice(dest[produced:])
-				produced += 16 - bits.OnesCount64(mask&0xffff0)
+				dataB.GetLo().AsUint8x16().StoreSlice(d[32-a:])
+				a += bits.OnesCount64(mask & 0xffff0)
 				// Store upper 128 bits
-				dataB.GetHi().AsUint8x16().StoreSlice(dest[produced:])
-				produced += 16 - bits.OnesCount64(mask>>20)
+				dataB.GetHi().AsUint8x16().StoreSlice(d[48-a:])
+				a += bits.OnesCount64(mask & 0xffff00000)
+				produced += 64 - a
 			}
 		} else {
 			dataA = oDataA.Add(yencOffset)
 			dataB = oDataB.Add(broadcastNeg42)
-			dataA.AsUint8x32().StoreSlice(dest[produced:])
-			dataB.AsUint8x32().StoreSlice(dest[produced+32:])
-			produced += 2 * 32
-			*escFirst = 0
+			dataA.AsUint8x32().StoreSlice(d)
+			dataB.AsUint8x32().StoreSlice(d[32:])
+			produced += 64
+			escFirst = 0
 			yencOffset = broadcastNeg42
 		}
 	}
-	return consumed, produced
+	return consumed, produced, escFirst, nextMask
 }
 
-func decoderSetNextMask(isRaw bool, src []byte, position int, nextMask *uint16) {
+func decoderSetNextMask(isRaw bool, src []byte, position int, nextMask uint16) uint16 {
 	if isRaw {
 		if position > 0 { // have to gone through at least one loop cycle
-			if position >= 2 && src[position-2] == '\r' && src[position-1] == '\n' && src[position] == '.' {
-				*nextMask = 1
-			} else if src[position-1] == '\r' && src[position] == '\n' && src[position+1] == '.' {
-				*nextMask = 2
+			if bytes.Equal(src[position-2:], []byte("\r\n.")) {
+				return 1
+			} else if bytes.Equal(src[position-1:], []byte("\r\n.")) {
+				return 2
 			} else {
-				*nextMask = 0
+				return 0
 			}
 		}
-	} else {
-		*nextMask = 0
+		return nextMask
 	}
+
+	return 0
 }
 
 // without backtracking

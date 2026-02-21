@@ -8,27 +8,26 @@ import (
 )
 
 func decodeSIMD(
-		width int,
-		dest []byte,
-		src []byte,
-		state *State,
-		kernel func(dest, src []byte, srcLength int, escFirst *uint8, nextMask *uint16) (int, int),
+	width int,
+	dest []byte,
+	src []byte,
+	state *State,
+	kernel func(dest, src []byte, srcLength int, escFirst uint64, nextMask uint16) (int, int, uint64, uint16),
 ) (nSrc int, decoded []byte, end End, err error) {
 	const isRaw = true
 	const searchEnd = true
 	length := len(src)
 
-	consumed := 0
-	produced := 0
-
-	if len(src) <= width*2 {
+	if length <= width*2 {
 		return decodeGeneric(dest, src, state)
 	}
 
-	tState := StateCRLF
+	consumed := 0
+	produced := 0
+
 	pState := state
 	if pState == nil {
-		pState = &tState
+		pState = new(StateCRLF)
 	}
 
 	if uintptr(unsafe.Pointer(&src[0]))&(uintptr(width)-1) != 0 {
@@ -55,8 +54,7 @@ func decodeSIMD(
 
 	if len(src) > lenBuffer {
 		// Core SIMD logic
-		var escFirst uint8 = 0
-		var nextMask uint16 = 0
+		var nextMask uint16
 
 		switch *pState {
 		case StateCRLF:
@@ -110,6 +108,7 @@ func decodeSIMD(
 			}
 		}
 
+		var escFirst uint64
 		if *pState == StateEQ || *pState == StateCRLFEQ {
 			escFirst = 1
 		}
@@ -119,7 +118,7 @@ func decodeSIMD(
 			dLen = len(src)
 		}
 
-		c, p := kernel(dest[produced:], src, dLen, &escFirst, &nextMask)
+		c, p, escFirst, nextMask := kernel(dest[produced:], src, dLen, escFirst, nextMask)
 		consumed += c
 		produced += p
 		src = src[c:]
