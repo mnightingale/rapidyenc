@@ -19,15 +19,19 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - name: cgo-enabled
+          - name: cgo
             cgo_enabled: 1
             goexperiment: ""
-          - name: no-cgo-simd
+          - name: archsimd
             cgo_enabled: 0
             goexperiment: simd
-          - name: no-cgo
+          - name: scalar
             cgo_enabled: 0
             goexperiment: ""
+
+    env:
+      CGO_ENABLED: ${{ matrix.cgo_enabled }}
+      GOEXPERIMENT: ${{ matrix.goexperiment }}
 
     steps:
       - name: Checkout code
@@ -39,16 +43,55 @@ jobs:
           go-version: '1.26'
 
       - name: Run tests
-        env:
-          CGO_ENABLED: ${{ matrix.cgo_enabled }}
-          GOEXPERIMENT: ${{ matrix.goexperiment }}
         run: |
           go run gotest.tools/gotestsum@latest \
             --junitfile unit-tests-${{ matrix.name }}.xml \
             --format pkgname \
             -- ./...
 
+      - name: Run benchmarks
+        run: go test -bench=. -benchmem -count=5 ./... | tee benchmark-${{ matrix.name }}.txt
+
+      - name: Upload benchmark results
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmarks-${{ matrix.name }}
+          path: benchmark-${{ matrix.name }}.txt
+
       - name: Test Summary
         uses: test-summary/action@v2
         with:
           paths: "unit-tests-*.xml"
+
+  benchmark-compare:
+    name: Compare benchmarks (cgo vs archsimd)
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Set up Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: '1.26'
+
+      - name: Download cgo benchmark
+        uses: actions/download-artifact@v4
+        with:
+          name: benchmarks-cgo
+          path: bench-cgo
+
+      - name: Download archsimd benchmark
+        uses: actions/download-artifact@v4
+        with:
+          name: benchmarks-archsimd
+          path: bench-archsimd
+
+      - name: Download scalar benchmark
+        uses: actions/download-artifact@v4
+        with:
+          name: benchmarks-scalar
+          path: bench-scalar
+
+      - name: Compare with benchstat
+        run: |
+          go install golang.org/x/perf/cmd/benchstat@latest
+          benchstat bench-cgo/benchmark-cgo.txt bench-archsimd/benchmark-archsimd.txt bench-scalar/benchmark-scalar.txt
