@@ -49,49 +49,36 @@ jobs:
             --format pkgname \
             -- ./...
 
-      - name: Run benchmarks
-        run: go test -bench=. -benchmem -count=5 ./... | tee benchmark-${{ matrix.name }}.txt
-
-      - name: Upload benchmark results
-        uses: actions/upload-artifact@v4
-        with:
-          name: benchmarks-${{ matrix.name }}
-          path: benchmark-${{ matrix.name }}.txt
-
       - name: Test Summary
         uses: test-summary/action@v2
         with:
           paths: "unit-tests-*.xml"
 
   benchmark-compare:
-    name: Compare benchmarks (cgo vs archsimd)
+    name: Compare benchmarks
     needs: test
     runs-on: ubuntu-latest
     steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
       - name: Set up Go
         uses: actions/setup-go@v4
         with:
           go-version: '1.26'
 
-      - name: Download cgo benchmark
-        uses: actions/download-artifact@v4
-        with:
-          name: benchmarks-cgo
-          path: bench-cgo
+      - name: Benchmark CGO
+        run: go test -bench=. -benchmem -count=5 ./... | tee benchmark-cgo.txt
+        env:
+          CGO_ENABLED: 1
 
-      - name: Download archsimd benchmark
-        uses: actions/download-artifact@v4
-        with:
-          name: benchmarks-archsimd
-          path: bench-archsimd
-
-      - name: Download scalar benchmark
-        uses: actions/download-artifact@v4
-        with:
-          name: benchmarks-scalar
-          path: bench-scalar
+      - name: Benchmark archsimd
+        run: go test -bench=. -benchmem -count=5 ./... | tee benchmark-archsimd.txt
+        env:
+          CGO_ENABLED: 0
+          GOEXPERIMENT: simd
 
       - name: Compare with benchstat
         run: |
           go install golang.org/x/perf/cmd/benchstat@latest
-          benchstat bench-cgo/benchmark-cgo.txt bench-archsimd/benchmark-archsimd.txt bench-scalar/benchmark-scalar.txt
+          benchstat benchmark-cgo.txt benchmark-archsimd.txt
