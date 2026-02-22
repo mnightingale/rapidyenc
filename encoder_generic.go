@@ -141,7 +141,3 @@ end:
 	*colOffset = col
 	return dest[:write]
 }
-
-func encodeIncremental(lineLength int, column *int, src []byte, dest []byte, isEnd bool) []byte {
-	return encodeGeneric(lineLength, column, src, dest, isEnd)
-}
