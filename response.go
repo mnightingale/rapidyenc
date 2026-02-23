@@ -13,21 +13,7 @@ import (
 )
 
 type Response struct {
-	BytesProduced int64
-	BytesConsumed int64
-	Lines         []string
-	Format        Format
-	FileName      string
-	FileSize      int64 // Total size of the file
-	PartNumber    int64
-	Offset        int64 // Offset of the part within the file relative to the start, like io.Seeker or io.WriterAt
-	PartSize      int64 // Expected size of the unencoded data
-	EndSize       int64
-	TotalParts    int64
-	ExpectedCRC   uint32
-	Message       string
-	StatusCode    int
-	CRC           uint32
+	Metadata ResponseMeta
 
 	hasStatusLine bool
 	state         State
@@ -39,16 +25,6 @@ type Response struct {
 	hasCrc        bool
 	hasEmptyLine  bool // for article requests has the empty line separating headers and body been seen
 	hasBadData    bool // invalid line lengths for uu decoding; some data lost
-}
-
-// Begin is the "=ypart begin" value calculated from the Offset
-func (r *Response) Begin() int64 {
-	return r.Offset + 1
-}
-
-// End is the "=ypart end" value calculated from the Offset and PartSize
-func (r *Response) End() int64 {
-	return r.Offset + r.PartSize
 }
 
 const nntpBody = 222
@@ -75,7 +51,7 @@ func (r *Response) Feed(buf []byte, out io.Writer) (consumed int, done bool, err
 }
 
 func (r *Response) metaError() error {
-	if r.Format == FormatUU {
+	if r.Metadata.Format == FormatUU {
 		return nil
 	}
 	if !r.hasBegin {
@@ -84,17 +60,17 @@ func (r *Response) metaError() error {
 	if !r.hasEnd {
 		return fmt.Errorf("[rapidyenc] end of article without finding \"=yend\" trailer: %w", ErrDataCorruption)
 	}
-	if (!r.hasPart && r.FileSize != r.BytesProduced) || (r.hasPart && r.PartSize != r.BytesProduced) {
-		return fmt.Errorf("[rapidyenc] expected size %d but got %d: %w", r.PartSize, r.BytesProduced, ErrDataCorruption)
+	if (!r.hasPart && r.Metadata.FileSize != r.Metadata.BytesProduced) || (r.hasPart && r.Metadata.PartSize != r.Metadata.BytesProduced) {
+		return fmt.Errorf("[rapidyenc] expected size %d but got %d: %w", r.Metadata.PartSize, r.Metadata.BytesProduced, ErrDataCorruption)
 	}
-	if r.hasCrc && r.ExpectedCRC != r.CRC {
-		return fmt.Errorf("[rapidyenc] expected decoded data to have CRC32 hash %#08x but got %#08x: %w", r.ExpectedCRC, r.CRC, ErrCrcMismatch)
+	if r.hasCrc && r.Metadata.ExpectedCRC != r.Metadata.CRC {
+		return fmt.Errorf("[rapidyenc] expected decoded data to have CRC32 hash %#08x but got %#08x: %w", r.Metadata.ExpectedCRC, r.Metadata.CRC, ErrCrcMismatch)
 	}
 	return nil
 }
 
 func (r *Response) decode(buf []byte, out io.Writer) (read int, err error) {
-	if r.body && r.Format == FormatYenc {
+	if r.body && r.Metadata.Format == FormatYenc {
 		n, err := r.decodeYenc(buf, out)
 		if err != nil {
 			return int(n), err
@@ -121,11 +97,11 @@ func (r *Response) decode(buf []byte, out io.Writer) (read int, err error) {
 				break
 			}
 
-			if r.Format == FormatUnknown {
-				if r.hasStatusLine && r.StatusCode == 0 && len(line) >= 3 {
-					r.Message = string(line)
-					r.StatusCode, err = strconv.Atoi(string(line[:3]))
-					if err != nil || !isMultiline(r.StatusCode) {
+			if r.Metadata.Format == FormatUnknown {
+				if r.hasStatusLine && r.Metadata.StatusCode == 0 && len(line) >= 3 {
+					r.Metadata.Message = string(line)
+					r.Metadata.StatusCode, err = strconv.Atoi(string(line[:3]))
+					if err != nil || !isMultiline(r.Metadata.StatusCode) {
 						r.eof = true
 						break
 					}
@@ -134,9 +110,9 @@ func (r *Response) decode(buf []byte, out io.Writer) (read int, err error) {
 				r.detectFormat(line)
 			}
 
-			switch r.Format {
+			switch r.Metadata.Format {
 			case FormatUnknown:
-				r.Lines = append(r.Lines, string(line))
+				r.Metadata.Lines = append(r.Metadata.Lines, string(line))
 			case FormatYenc:
 				r.processYencHeader(line)
 				if r.body {
@@ -165,7 +141,7 @@ func (r *Response) decode(buf []byte, out io.Writer) (read int, err error) {
 }
 
 func (r *Response) detectFormat(line []byte) {
-	if r.hasStatusLine && r.StatusCode != nntpBody && r.StatusCode != nntpArtiicle {
+	if r.hasStatusLine && r.Metadata.StatusCode != nntpBody && r.Metadata.StatusCode != nntpArtiicle {
 		return
 	}
 
@@ -176,13 +152,13 @@ func (r *Response) detectFormat(line []byte) {
 
 	// YEnc detection
 	if bytes.HasPrefix(line, []byte("=ybegin ")) {
-		r.Format = FormatYenc
+		r.Metadata.Format = FormatYenc
 		return
 	}
 
 	// UUEncode detection: 60 or 61 chars, starts with 'M'
 	if (len(line) == 60 || len(line) == 61) && line[0] == 'M' {
-		r.Format = FormatUU
+		r.Metadata.Format = FormatUU
 		return
 	}
 
@@ -207,7 +183,7 @@ func (r *Response) detectFormat(line []byte) {
 		}
 
 		if valid {
-			r.Format = FormatUU
+			r.Metadata.Format = FormatUU
 		}
 		return
 	}
@@ -223,7 +199,7 @@ func (r *Response) detectFormat(line []byte) {
 	}
 
 	// For Article responses only consider after the headers
-	if r.hasStatusLine && !(r.StatusCode == nntpBody || (r.StatusCode == nntpArtiicle && r.hasEmptyLine)) {
+	if r.hasStatusLine && !(r.Metadata.StatusCode == nntpBody || (r.Metadata.StatusCode == nntpArtiicle && r.hasEmptyLine)) {
 		return
 	}
 
@@ -246,7 +222,7 @@ func (r *Response) detectFormat(line []byte) {
 		}
 
 		// Probably UU
-		r.Format = FormatUU
+		r.Metadata.Format = FormatUU
 		r.body = true
 		return
 	}
@@ -296,8 +272,8 @@ func (r *Response) decodeYenc(buf []byte, out io.Writer) (n int64, err error) {
 	produced, consumed, end, err = DecodeIncremental(buf, buf, &r.state)
 
 	if produced > 0 {
-		r.CRC = crc32.Update(r.CRC, crc32.IEEETable, buf[:produced])
-		r.BytesProduced += int64(produced)
+		r.Metadata.CRC = crc32.Update(r.Metadata.CRC, crc32.IEEETable, buf[:produced])
+		r.Metadata.BytesProduced += int64(produced)
 		if _, werr := out.Write(buf[:produced]); werr != nil {
 			return n, werr
 		}
@@ -334,7 +310,7 @@ func (r *Response) decodeUU(line []byte, out io.Writer) error {
 			line = bytes.TrimLeft(line, " ")                 // skip spaces after permissions
 
 			// The rest of the line is the filename
-			r.FileName = string(line)
+			r.Metadata.FileName = string(line)
 
 			r.body = true
 			return nil
@@ -349,7 +325,7 @@ func (r *Response) decodeUU(line []byte, out io.Writer) error {
 	// Detect 'end' line
 	if r.body && (bytes.Equal(line, []byte("`")) || bytes.Equal(line, []byte("end"))) {
 		r.body = false
-		r.FileSize = r.BytesProduced
+		r.Metadata.FileSize = r.Metadata.BytesProduced
 		return nil
 	}
 
@@ -422,8 +398,8 @@ func (r *Response) decodeUU(line []byte, out io.Writer) error {
 			if _, err := out.Write(decoded); err != nil {
 				return err
 			}
-			r.BytesProduced += int64(len(decoded))
-			r.CRC = crc32.Update(r.CRC, crc32.IEEETable, decoded)
+			r.Metadata.BytesProduced += int64(len(decoded))
+			r.Metadata.CRC = crc32.Update(r.Metadata.CRC, crc32.IEEETable, decoded)
 		}
 	}
 
@@ -435,14 +411,14 @@ func (r *Response) processYencHeader(line []byte) {
 	if bytes.HasPrefix(line, []byte("=ybegin ")) {
 		r.hasBegin = true
 		line = line[len("=ybegin"):]
-		r.FileSize, _ = extractInt(line, []byte(" size="))
-		r.FileName, _ = extractString(line, []byte(" name="))
-		if r.PartNumber, err = extractInt(line, []byte(" part=")); err != nil {
+		r.Metadata.FileSize, _ = extractInt(line, []byte(" size="))
+		r.Metadata.FileName, _ = extractString(line, []byte(" name="))
+		if r.Metadata.PartNumber, err = extractInt(line, []byte(" part=")); err != nil {
 			// Not multi-part, so body starts immediately after =ybegin
 			r.body = true
-			r.PartSize = r.FileSize
+			r.Metadata.PartSize = r.Metadata.FileSize
 		}
-		r.TotalParts, _ = extractInt(line, []byte(" total="))
+		r.Metadata.TotalParts, _ = extractInt(line, []byte(" total="))
 	} else if bytes.HasPrefix(line, []byte("=ypart ")) {
 		// =ypart signals start of body data in multi-part files
 		r.hasPart = true
@@ -451,22 +427,22 @@ func (r *Response) processYencHeader(line []byte) {
 		var begin int64
 		// Convert from 1-based to 0-based indexing
 		if begin, err = extractInt(line, []byte(" begin=")); err == nil {
-			r.Offset = begin - 1
+			r.Metadata.Offset = begin - 1
 		}
 		if end, err := extractInt(line, []byte(" end=")); err == nil && end >= begin {
-			r.PartSize = end - r.Offset
+			r.Metadata.PartSize = end - r.Metadata.Offset
 		}
 	} else if bytes.HasPrefix(line, []byte("=yend ")) {
 		r.hasEnd = true
 		line = line[len("=yend"):]
 		if crc, err := extractCRC(line, []byte(" pcrc32=")); err == nil {
-			r.ExpectedCRC = crc
+			r.Metadata.ExpectedCRC = crc
 			r.hasCrc = true
 		} else if crc, err := extractCRC(line, []byte(" crc32=")); err == nil {
-			r.ExpectedCRC = crc
+			r.Metadata.ExpectedCRC = crc
 			r.hasCrc = true
 		}
-		r.EndSize, _ = extractInt(line, []byte(" size="))
+		r.Metadata.EndSize, _ = extractInt(line, []byte(" size="))
 	}
 }
 

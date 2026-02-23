@@ -38,8 +38,8 @@ func TestDecode(t *testing.T) {
 			require.Equal(t, len(raw), b.Len())
 			require.NoError(t, err)
 			require.Equal(t, raw, b.Bytes())
-			require.Equal(t, tc.crc, response.CRC)
-			require.Equal(t, int64(len(raw)), response.End())
+			require.Equal(t, tc.crc, response.Metadata.CRC)
+			require.Equal(t, int64(len(raw)), response.Metadata.End())
 		})
 	}
 }
@@ -70,7 +70,7 @@ func TestDecodeUU(t *testing.T) {
 			meta, err := dec.Next(b)
 			require.NoError(t, err)
 			require.Equal(t, tc.length, b.Len())
-			require.Equal(t, tc.crc, meta.CRC)
+			require.Equal(t, tc.crc, meta.Metadata.CRC)
 		})
 	}
 }
@@ -128,7 +128,7 @@ func TestSplitReads(t *testing.T) {
 			require.Equal(t, len(raw), b.Len())
 			require.NoError(t, err)
 			require.Equal(t, raw, b.Bytes())
-			require.Equal(t, int64(len(raw)), meta.End())
+			require.Equal(t, int64(len(raw)), meta.Metadata.End())
 		})
 	}
 }

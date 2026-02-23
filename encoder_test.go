@@ -54,9 +54,9 @@ func TestEncoderSimple(t *testing.T) {
 			r, err := dec.Next(decoded)
 			require.NoError(t, err)
 			require.Equal(t, tc.input, decoded.Bytes())
-			require.Equal(t, int64(len(tc.input)), r.PartSize)
-			require.Equal(t, crc32.ChecksumIEEE(tc.input), r.CRC)
-			require.Equal(t, int64(len(tc.input)), r.End())
+			require.Equal(t, int64(len(tc.input)), r.Metadata.PartSize)
+			require.Equal(t, crc32.ChecksumIEEE(tc.input), r.Metadata.CRC)
+			require.Equal(t, int64(len(tc.input)), r.Metadata.End())
 		})
 	}
 }

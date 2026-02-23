@@ -12,6 +12,20 @@ type Meta struct {
 	PartSize   int64 // Size of the unencoded data
 }
 
+type ResponseMeta struct {
+	Meta
+	BytesProduced int64
+	BytesConsumed int64
+	Lines         []string
+	Format        Format
+	EndSize       int64
+	TotalParts    int64
+	ExpectedCRC   uint32
+	Message       string
+	StatusCode    int
+	CRC           uint32
+}
+
 // Begin is the "=ypart begin" value calculated from the Offset
 func (m Meta) Begin() int64 {
 	return m.Offset + 1
