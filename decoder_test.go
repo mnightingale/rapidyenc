@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"sync"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -138,11 +139,24 @@ func BenchmarkDecoder(b *testing.B) {
 	r, err := body(raw)
 	require.NoError(b, err)
 
-	dec := NewDecoder(r, WithStatusLineAlreadyRead())
+	var bufferPool = sync.Pool{
+		New: func() any {
+			return make([]byte, 0, defaultReadBufSize)
+		},
+	}
+
+	dec := NewDecoder(
+		r,
+		WithStatusLineAlreadyRead(),
+		WithDataFunc(func() []byte {
+			return bufferPool.Get().([]byte)
+		}),
+	)
 	b.ResetTimer()
 	for b.Loop() {
-		_, err = dec.Next()
+		response, err := dec.Next()
 		require.NoError(b, err)
+		bufferPool.Put(response.Data)
 		_, err = r.Seek(0, io.SeekStart)
 		require.NoError(b, err)
 	}

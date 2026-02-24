@@ -24,6 +24,7 @@ type Response struct {
 	hasCrc        bool
 	hasEmptyLine  bool // for article requests has the empty line separating headers and body been seen
 	hasBadData    bool // invalid line lengths for uu decoding; some data lost
+	dataFunc      func() []byte
 }
 
 const nntpBody = 222
@@ -31,8 +32,10 @@ const nntpArtiicle = 220
 const nntpHead = 221
 const nntpCapabilities = 101
 
-func newResponseFeeder() *Response {
-	return &Response{}
+func newResponseFeeder(dataFunc func() []byte) *Response {
+	return &Response{
+		dataFunc: dataFunc,
+	}
 }
 
 // feed consumes raw NNTP protocol bytes from buf, writing any decoded payload bytes to r.Data.
@@ -268,24 +271,28 @@ const (
 // On first call, sizes the buffer based on yEnc header metadata.
 func (r *Response) ensureData(inputLen int) {
 	if r.Data == nil {
-		// Allocate output buffer on first decode call
-		// Use size from headers, capped at yencMaxPartSize for safety
-		base := r.Metadata.PartSize
-		if base <= 0 {
-			base = r.Metadata.FileSize
+		if r.dataFunc != nil {
+			r.Data = r.dataFunc()[:0]
+		} else {
+			// Allocate output buffer on first decode call
+			// Use size from headers, capped at yencMaxPartSize for safety
+			base := r.Metadata.PartSize
+			if base <= 0 {
+				base = r.Metadata.FileSize
+			}
+			expected := base + 64 // small margin to see the end of yEnc data
+			// Round up to next multiple of defaultReadBufSize
+			expected = ((expected + defaultReadBufSize - 1) / defaultReadBufSize) * defaultReadBufSize
+			// Add an extra chunk so we should never need to resize
+			expected += defaultReadBufSize
+
+			expected = max(expected, yencMinBufferSize)
+			expected = min(expected, yencMaxPartSize)
+			expected = max(expected, int64(inputLen))
+
+			r.Data = make([]byte, 0, expected)
+			return
 		}
-		expected := base + 64 // small margin to see the end of yEnc data
-		// Round up to next multiple of defaultReadBufSize
-		expected = ((expected + defaultReadBufSize - 1) / defaultReadBufSize) * defaultReadBufSize
-		// Add an extra chunk so we should never need to resize
-		expected += defaultReadBufSize
-
-		expected = max(expected, yencMinBufferSize)
-		expected = min(expected, yencMaxPartSize)
-		expected = max(expected, int64(inputLen))
-
-		r.Data = make([]byte, 0, expected)
-		return
 	}
 
 	if needed := len(r.Data) + inputLen; cap(r.Data) < needed {

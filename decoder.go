@@ -27,6 +27,7 @@ type Decoder struct {
 	r                  io.Reader
 	rb                 readBuffer
 	statusLineConsumed bool // Has the caller already consumed the status line; if so trust that it is a multiline response
+	dataFunc           func() []byte
 }
 
 type DecoderOption func(d *Decoder)
@@ -56,6 +57,14 @@ func WithBufferSize(size int) DecoderOption {
 	}
 }
 
+// WithDataFunc allows a function to be called when responses need a []byte, for example from a sync.Pool to
+// reduce GC pressure
+func WithDataFunc(dataFunc func() []byte) DecoderOption {
+	return func(d *Decoder) {
+		d.dataFunc = dataFunc
+	}
+}
+
 var (
 	ErrDataMissing    = errors.New("no binary data")
 	ErrDataCorruption = errors.New("data corruption detected") // io.EOF or ".\r\n" reached before =yend
@@ -69,7 +78,7 @@ type streamFeeder interface {
 // Next reads from r until a complete response is decoded.
 // If r is a net.Conn, the caller is responsible for settings deadlines.
 func (d *Decoder) Next() (*Response, error) {
-	response := newResponseFeeder()
+	response := newResponseFeeder(d.dataFunc)
 
 	if err := d.rb.feedUntilDone(d.r, response); err != nil {
 		if !response.eof && errors.Is(err, io.EOF) {
