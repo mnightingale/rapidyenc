@@ -33,11 +33,10 @@ func TestDecode(t *testing.T) {
 			require.NoError(t, err)
 
 			dec := NewDecoder(encoded, WithStatusLineAlreadyRead())
-			b := bytes.NewBuffer(nil)
-			response, err := dec.Next(b)
-			require.Equal(t, len(raw), b.Len())
+			response, err := dec.Next()
+			require.Equal(t, len(raw), len(response.Data))
 			require.NoError(t, err)
-			require.Equal(t, raw, b.Bytes())
+			require.Equal(t, raw, response.Data)
 			require.Equal(t, tc.crc, response.Metadata.CRC)
 			require.Equal(t, int64(len(raw)), response.Metadata.End())
 		})
@@ -66,11 +65,10 @@ func TestDecodeUU(t *testing.T) {
 			require.NoError(t, err)
 
 			dec := NewDecoder(w, WithStatusLineAlreadyRead())
-			b := bytes.NewBuffer(nil)
-			meta, err := dec.Next(b)
+			response, err := dec.Next()
 			require.NoError(t, err)
-			require.Equal(t, tc.length, b.Len())
-			require.Equal(t, tc.crc, meta.Metadata.CRC)
+			require.Equal(t, tc.length, len(response.Data))
+			require.Equal(t, tc.crc, response.Metadata.CRC)
 		})
 	}
 }
@@ -123,12 +121,11 @@ func TestSplitReads(t *testing.T) {
 			}()
 
 			dec := NewDecoder(r, WithStatusLineAlreadyRead())
-			b := bytes.NewBuffer(nil)
-			meta, err := dec.Next(b)
-			require.Equal(t, len(raw), b.Len())
+			response, err := dec.Next()
+			require.Equal(t, len(raw), len(response.Data))
 			require.NoError(t, err)
-			require.Equal(t, raw, b.Bytes())
-			require.Equal(t, int64(len(raw)), meta.Metadata.End())
+			require.Equal(t, raw, response.Data)
+			require.Equal(t, int64(len(raw)), response.Metadata.End())
 		})
 	}
 }
@@ -144,7 +141,7 @@ func BenchmarkDecoder(b *testing.B) {
 	dec := NewDecoder(r, WithStatusLineAlreadyRead())
 	b.ResetTimer()
 	for b.Loop() {
-		_, err = dec.Next(io.Discard)
+		_, err = dec.Next()
 		require.NoError(b, err)
 		_, err = r.Seek(0, io.SeekStart)
 		require.NoError(b, err)

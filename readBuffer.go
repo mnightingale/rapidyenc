@@ -87,7 +87,7 @@ func (rb *readBuffer) readMore(r io.Reader) (int, error) {
 	return n, err
 }
 
-func (rb *readBuffer) feedUntilDone(r io.Reader, feeder streamFeeder, out io.Writer) error {
+func (rb *readBuffer) feedUntilDone(r io.Reader, feeder streamFeeder) error {
 	rb.init()
 
 	for {
@@ -99,7 +99,7 @@ func (rb *readBuffer) feedUntilDone(r io.Reader, feeder streamFeeder, out io.Wri
 			}
 		}
 
-		consumed, done, err := feeder.Feed(rb.window(), out)
+		consumed, done, err := feeder.feed(rb.window())
 		if consumed > 0 {
 			rb.advance(consumed)
 		}

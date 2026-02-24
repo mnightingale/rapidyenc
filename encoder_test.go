@@ -49,14 +49,13 @@ func TestEncoderSimple(t *testing.T) {
 			require.True(t, bytes.Contains(encoded.Bytes(), expected))
 
 			// Check that we can decode it back again
-			decoded := new(bytes.Buffer)
 			dec := NewDecoder(encoded, WithStatusLineAlreadyRead())
-			r, err := dec.Next(decoded)
+			response, err := dec.Next()
 			require.NoError(t, err)
-			require.Equal(t, tc.input, decoded.Bytes())
-			require.Equal(t, int64(len(tc.input)), r.Metadata.PartSize)
-			require.Equal(t, crc32.ChecksumIEEE(tc.input), r.Metadata.CRC)
-			require.Equal(t, int64(len(tc.input)), r.Metadata.End())
+			require.Equal(t, tc.input, response.Data)
+			require.Equal(t, int64(len(tc.input)), response.Metadata.PartSize)
+			require.Equal(t, crc32.ChecksumIEEE(tc.input), response.Metadata.CRC)
+			require.Equal(t, int64(len(tc.input)), response.Metadata.End())
 		})
 	}
 }

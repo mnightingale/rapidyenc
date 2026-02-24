@@ -7,14 +7,13 @@ import (
 	"errors"
 	"fmt"
 	"hash/crc32"
-	"io"
 	"strconv"
 	"unicode"
 )
 
 type Response struct {
-	Metadata ResponseMeta
-
+	Metadata      ResponseMeta
+	Data          []byte
 	hasStatusLine bool
 	state         State
 	eof           bool
@@ -32,14 +31,13 @@ const nntpArtiicle = 220
 const nntpHead = 221
 const nntpCapabilities = 101
 
-// Feed consumes raw NNTP protocol bytes from buf, writing any decoded payload bytes to out.
-// It returns (bytesConsumedFromBuf, done, error).
-func (r *Response) Feed(buf []byte, out io.Writer) (consumed int, done bool, err error) {
-	if out == nil {
-		out = io.Discard
-	}
+func newResponseFeeder() *Response {
+	return &Response{}
+}
 
-	n, err := r.decode(buf, out)
+// feed consumes raw NNTP protocol bytes from buf, writing any decoded payload bytes to r.Data.
+func (r *Response) feed(buf []byte) (consumed int, done bool, err error) {
+	n, err := r.decode(buf)
 
 	if err != nil {
 		return n, false, err
@@ -69,9 +67,9 @@ func (r *Response) metaError() error {
 	return nil
 }
 
-func (r *Response) decode(buf []byte, out io.Writer) (read int, err error) {
+func (r *Response) decode(buf []byte) (read int, err error) {
 	if r.body && r.Metadata.Format == FormatYenc {
-		n, err := r.decodeYenc(buf, out)
+		n, err := r.decodeYenc(buf)
 		if err != nil {
 			return int(n), err
 		}
@@ -116,7 +114,7 @@ func (r *Response) decode(buf []byte, out io.Writer) (read int, err error) {
 			case FormatYenc:
 				r.processYencHeader(line)
 				if r.body {
-					n, err := r.decodeYenc(buf, out)
+					n, err := r.decodeYenc(buf)
 					read += int(n)
 					buf = buf[n:]
 					if err != nil {
@@ -129,7 +127,7 @@ func (r *Response) decode(buf []byte, out io.Writer) (read int, err error) {
 					// =ypart was encountered, switch to body decoding
 				}
 			case FormatUU:
-				err := r.decodeUU(line, out)
+				err := r.decodeUU(line)
 				if err != nil {
 					return read, err
 				}
@@ -261,46 +259,83 @@ func isMultiline(code int) bool {
 	return code == nntpBody || code == nntpArtiicle || code == nntpHead || code == nntpCapabilities
 }
 
-func (r *Response) decodeYenc(buf []byte, out io.Writer) (n int64, err error) {
+const (
+	yencMaxPartSize   = 10 * 1024 * 1024 // 10 MiB
+	yencMinBufferSize = 1024
+)
+
+// ensureData ensures r.data has enough capacity for inputLen additional decoded bytes.
+// On first call, sizes the buffer based on yEnc header metadata.
+func (r *Response) ensureData(inputLen int) {
+	if r.Data == nil {
+		// Allocate output buffer on first decode call
+		// Use size from headers, capped at yencMaxPartSize for safety
+		base := r.Metadata.PartSize
+		if base <= 0 {
+			base = r.Metadata.FileSize
+		}
+		expected := base + 64 // small margin to see the end of yEnc data
+		// Round up to next multiple of defaultReadBufSize
+		expected = ((expected + defaultReadBufSize - 1) / defaultReadBufSize) * defaultReadBufSize
+		// Add an extra chunk so we should never need to resize
+		expected += defaultReadBufSize
+
+		expected = max(expected, yencMinBufferSize)
+		expected = min(expected, yencMaxPartSize)
+		expected = max(expected, int64(inputLen))
+
+		r.Data = make([]byte, 0, expected)
+		return
+	}
+
+	if needed := len(r.Data) + inputLen; cap(r.Data) < needed {
+		newData := make([]byte, len(r.Data), needed)
+		copy(newData, r.Data)
+		r.Data = newData
+	}
+}
+
+func (r *Response) decodeYenc(buf []byte) (consumed int, err error) {
 	if len(buf) == 0 {
 		return 0, nil
 	}
 
-	var produced, consumed int
+	r.ensureData(len(buf))
+
+	offset := len(r.Data)
+	out := r.Data[offset : offset+len(buf)]
+
+	var produced int
 	var end End
 
-	produced, consumed, end, err = DecodeIncremental(buf, buf, &r.state)
-
+	produced, consumed, end, err = DecodeIncremental(out, buf, &r.state)
 	if produced > 0 {
-		r.Metadata.CRC = crc32.Update(r.Metadata.CRC, crc32.IEEETable, buf[:produced])
+		r.Data = r.Data[:offset+produced]
+		r.Metadata.CRC = crc32.Update(r.Metadata.CRC, crc32.IEEETable, r.Data[offset:offset+produced])
 		r.Metadata.BytesProduced += int64(produced)
-		if _, werr := out.Write(buf[:produced]); werr != nil {
-			return n, werr
-		}
 	}
-	n += int64(consumed)
 
 	switch end {
 	case EndNone:
 		if r.state == StateCRLFEQ {
 			// Special case: found "\r\n=" but no more data - might be start of =yend
 			r.state = StateCRLF
-			n -= 1 // Back up to allow =yend detection
+			consumed -= 1 // Back up to allow =yend detection
 		}
 	case EndControl:
 		// Found "\r\n=y" - likely =yend line, exit body mode
 		r.body = false
-		n -= 2 // Back up to include "=y" for header processing
+		consumed -= 2 // Back up to include "=y" for header processing
 	case EndArticle:
 		// Found ".\r\n" - NNTP article terminator, exit body mode
 		r.body = false
-		n -= 3 // Back up to include ".\r\n" for terminator detection
+		consumed -= 3 // Back up to include ".\r\n" for terminator detection
 	}
 
-	return n, nil
+	return consumed, nil
 }
 
-func (r *Response) decodeUU(line []byte, out io.Writer) error {
+func (r *Response) decodeUU(line []byte) error {
 	// Detect 'begin' line and extract filename
 	if !r.body {
 		if bytes.HasPrefix(line, []byte("begin ")) {
@@ -395,9 +430,7 @@ func (r *Response) decodeUU(line []byte, out io.Writer) error {
 		}
 
 		if len(decoded) > 0 {
-			if _, err := out.Write(decoded); err != nil {
-				return err
-			}
+			r.Data = append(r.Data, decoded...)
 			r.Metadata.BytesProduced += int64(len(decoded))
 			r.Metadata.CRC = crc32.Update(r.Metadata.CRC, crc32.IEEETable, decoded)
 		}

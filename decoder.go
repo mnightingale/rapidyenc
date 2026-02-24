@@ -63,28 +63,21 @@ var (
 )
 
 type streamFeeder interface {
-	Feed(in []byte, out io.Writer) (consumed int, done bool, err error)
+	feed(in []byte) (consumed int, done bool, err error)
 }
 
 // Next reads from r until a complete response is decoded.
 // If r is a net.Conn, the caller is responsible for settings deadlines.
-// The decoded response body is written to w.
-func (d *Decoder) Next(w io.Writer) (*Response, error) {
-	if w == nil {
-		return nil, errors.New("nil writer")
-	}
+func (d *Decoder) Next() (*Response, error) {
+	response := newResponseFeeder()
 
-	response := &Response{
-		hasStatusLine: !d.statusLineConsumed,
-	}
-
-	if err := d.rb.feedUntilDone(d.r, response, w); err != nil {
+	if err := d.rb.feedUntilDone(d.r, response); err != nil {
 		if !response.eof && errors.Is(err, io.EOF) {
 			// r return EOF but end of NNTP response was not reached
 			return nil, io.ErrUnexpectedEOF
 		}
 		if !errors.Is(err, io.EOF) {
-			return response, err
+			return nil, err
 		}
 	}
 
@@ -145,7 +138,7 @@ func DecodeIncremental(dst, src []byte, state *State) (nDst, nSrc int, end End, 
 		return 0, 0, EndNone, nil
 	}
 
-	if len(dst) < len(src) {
+	if cap(dst) < len(src) {
 		return 0, 0, 0, errDestinationTooSmall
 	}
 
