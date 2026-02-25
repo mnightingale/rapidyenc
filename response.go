@@ -267,29 +267,39 @@ const (
 	yencMinBufferSize = 1024
 )
 
+func (r *Response) computeExpectedSize(inputLen int) int {
+	// Allocate output buffer on first decode call
+	// Use size from headers, capped at yencMaxPartSize for safety
+	base := r.Metadata.PartSize
+	if base <= 0 {
+		base = r.Metadata.FileSize
+	}
+	expected := int(base) + 64 // small margin to see the end of yEnc data
+	// Round up to next multiple of defaultReadBufSize
+	expected = ((expected + defaultReadBufSize - 1) / defaultReadBufSize) * defaultReadBufSize
+	// Add an extra chunk so we should never need to resize
+	expected += defaultReadBufSize
+
+	expected = max(expected, yencMinBufferSize)
+	expected = min(expected, yencMaxPartSize)
+	expected = max(expected, inputLen)
+
+	return expected
+}
+
 // ensureData ensures r.data has enough capacity for inputLen additional decoded bytes.
 // On first call, sizes the buffer based on yEnc header metadata.
 func (r *Response) ensureData(inputLen int) {
 	if r.Data == nil {
+		expected := r.computeExpectedSize(inputLen)
 		if r.dataFunc != nil {
-			r.Data = r.dataFunc()[:0]
-		} else {
-			// Allocate output buffer on first decode call
-			// Use size from headers, capped at yencMaxPartSize for safety
-			base := r.Metadata.PartSize
-			if base <= 0 {
-				base = r.Metadata.FileSize
+			buf := r.dataFunc()
+			if cap(buf) < expected {
+				buf = make([]byte, 0, expected)
 			}
-			expected := base + 64 // small margin to see the end of yEnc data
-			// Round up to next multiple of defaultReadBufSize
-			expected = ((expected + defaultReadBufSize - 1) / defaultReadBufSize) * defaultReadBufSize
-			// Add an extra chunk so we should never need to resize
-			expected += defaultReadBufSize
-
-			expected = max(expected, yencMinBufferSize)
-			expected = min(expected, yencMaxPartSize)
-			expected = max(expected, int64(inputLen))
-
+			r.Data = buf[:0]
+			return
+		} else {
 			r.Data = make([]byte, 0, expected)
 			return
 		}
