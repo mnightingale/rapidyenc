@@ -1,9 +1,5 @@
 package rapidyenc
 
-/*
-#include "rapidyenc.h"
-*/
-import "C"
 import (
 	"errors"
 	"fmt"
@@ -11,7 +7,6 @@ import (
 	"hash/crc32"
 	"io"
 	"sync"
-	"unsafe"
 
 	"golang.org/x/sync/errgroup"
 )
@@ -41,8 +36,6 @@ type EncoderOption func(*Encoder)
 //
 // It is the caller's responsibility to call Close on the [Encoder] when done.
 func NewEncoder(w io.Writer, m Meta, opts ...EncoderOption) (e *Encoder, err error) {
-	maybeInitEncode()
-
 	e = &Encoder{
 		lineLength: 128,
 		hash:       crc32.NewIEEE(),
@@ -148,25 +141,18 @@ func (e *Encoder) Write(p []byte) (n int, err error) {
 
 		buf := e.buf
 
-		colTmp := C.int(e.column)
-		length := C.rapidyenc_encode_ex(
-			C.int(e.lineLength),
-			(*C.int)(unsafe.Pointer(&colTmp)),
-			unsafe.Pointer(&p[0]),
-			unsafe.Pointer(&buf[0]),
-			C.size_t(len(p)),
-			C.int(0),
-		)
-		e.column = int(colTmp)
+		encoded := encodeIncremental(e.lineLength, &e.column, p, buf, false)
+
+		length := len(encoded)
 
 		if length > 0 {
 			// If the last character is '\t' or ' ' then if this is the last write it will need escaping.
 			// Therefore, save the byte for the next call to Write or Close.
-			if buf[length-1] == '\t' || buf[length-1] == ' ' {
-				e.endByte = append(e.endByte, buf[length-1])
-				buf = buf[:length-1]
+			if encoded[length-1] == '\t' || encoded[length-1] == ' ' {
+				e.endByte = append(e.endByte, encoded[length-1])
+				buf = encoded[:length-1]
 			} else {
-				buf = buf[:length]
+				buf = encoded[:length]
 			}
 
 			if len(buf) > 0 {
@@ -211,33 +197,6 @@ func (e *Encoder) Close() error {
 	}
 
 	return nil
-}
-
-var encodeInitOnce sync.Once
-
-func maybeInitEncode() {
-	encodeInitOnce.Do(func() {
-		C.rapidyenc_encode_init()
-	})
-}
-
-// Encode yEnc encodes the src buffer without adding any =y headers
-//
-// Deprecated: use Encoder as an io.WriteCloser which includes yEnc headers
-func Encode(src []byte) ([]byte, error) {
-	if len(src) == 0 {
-		return nil, errors.New("empty source")
-	}
-
-	dst := make([]byte, maxLength(len(src), 128))
-
-	length := C.rapidyenc_encode(
-		unsafe.Pointer(&src[0]),
-		unsafe.Pointer(&dst[0]),
-		C.size_t(len(src)),
-	)
-
-	return dst[:length], nil
 }
 
 func (e *Encoder) writeHeader() (int, error) {

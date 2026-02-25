@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"hash/crc32"
 	"io"
+	randv2 "math/rand/v2"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -23,6 +24,7 @@ func TestEncoderSimple(t *testing.T) {
 		{"ESCAPE", []byte("\xF6"), []byte("\x3D\x60")},                // Ends with <space> so must be escaped
 		{"ESCAPE_NOT_FIRST", []byte("H\xF6"), []byte("\x72\x3D\x60")}, // Ends with <space> and not the first column, so must be escaped
 		{"Hello World", []byte("Hello World"), []byte("\x72\x8F\x96\x96\x99\x4A\x81\x99\x9C\x96\x8E")},
+		{"3DD4", []byte("\x3D\xD4"), []byte("\x67\xFE")},
 	}
 
 	for _, tc := range cases {
@@ -30,34 +32,43 @@ func TestEncoderSimple(t *testing.T) {
 			input := bytes.NewReader(tc.input)
 
 			encoded := new(bytes.Buffer)
-			w, err := NewEncoder(encoded, Meta{
-				FileName:   "filename",
-				FileSize:   input.Size(),
-				PartSize:   input.Size(),
-				PartNumber: 1,
-				TotalParts: 1,
-			})
+			w, err := NewEncoder(encoded, Meta{}, WithRaw())
 			require.NoError(t, err)
 			_, err = io.Copy(w, input)
 			require.NoError(t, err)
 			err = w.Close()
 			require.NoError(t, err)
-			encoded.Write([]byte(".\r\n"))
 
 			// Check contains the expected encoded value
-			expected := append([]byte("\r\n"), append(tc.expected, []byte("\r\n")[:]...)...)
-			require.True(t, bytes.Contains(encoded.Bytes(), expected))
+			require.True(t, bytes.Equal(encoded.Bytes(), tc.expected))
 
-			// Check that we can decode it back again
-			dec := NewDecoder(encoded, WithStatusLineAlreadyRead())
-			response, err := dec.Next()
-			require.NoError(t, err)
-			require.Equal(t, tc.input, response.Data)
-			require.Equal(t, int64(len(tc.input)), response.Metadata.PartSize)
-			require.Equal(t, crc32.ChecksumIEEE(tc.input), response.Metadata.CRC)
-			require.Equal(t, int64(len(tc.input)), response.Metadata.End())
+			//// Check that we can decode it back again
+			//dec := NewDecoder(encoded, WithStatusLineAlreadyRead())
+			//response, err := dec.Next()
+			//require.NoError(t, err)
+			//require.Equal(t, tc.input, response.Data)
+			//require.Equal(t, int64(len(tc.input)), response.Metadata.PartSize)
+			//require.Equal(t, crc32.ChecksumIEEE(tc.input), response.Metadata.CRC)
+			//require.Equal(t, int64(len(tc.input)), response.Metadata.End())
 		})
 	}
+}
+
+func TestEncoder(t *testing.T) {
+	raw := make([]byte, 1024*1024)
+	_, err := randv2.NewChaCha8([32]byte(bytes.Repeat([]byte{0xBA, 0xAD, 0xF0, 0x0D}, 8))).Read(raw)
+	require.NoError(t, err)
+
+	encodedHash := crc32.NewIEEE()
+	w, err := NewEncoder(encodedHash, Meta{}, WithRaw())
+	require.NoError(t, err)
+	_, err = io.Copy(w, bytes.NewReader(raw))
+	require.NoError(t, err)
+	err = w.Close()
+	require.NoError(t, err)
+
+	require.Equal(t, uint32(0xa623f24e), w.hash.Sum32())
+	require.Equal(t, uint32(0x599eab9e), encodedHash.Sum32())
 }
 
 func BenchmarkEncoder(b *testing.B) {

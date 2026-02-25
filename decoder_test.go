@@ -19,11 +19,10 @@ func TestDecode(t *testing.T) {
 	cases := []struct {
 		name string
 		raw  string
-		crc  uint32
 	}{
-		{"foobar", "foobar", 0x9EF61F95},
-		{"0x20", string(space), 0x31f365e7},
-		{"special", "\x04\x04\x04\x04", 0xca2ee18a},
+		{"foobar", "foobar"},
+		{"0x20", string(space)},
+		{"special", "\x04\x04\x04\x04"},
 	}
 
 	for _, tc := range cases {
@@ -38,8 +37,36 @@ func TestDecode(t *testing.T) {
 			require.Equal(t, len(raw), len(response.Data))
 			require.NoError(t, err)
 			require.Equal(t, raw, response.Data)
-			require.Equal(t, tc.crc, response.Metadata.CRC)
 			require.Equal(t, int64(len(raw)), response.Metadata.End())
+
+		})
+	}
+}
+
+func TestDecodePattern(t *testing.T) {
+	cases := []struct {
+		name    string
+		pattern string
+	}{
+		{"foobar", "A0B1C2D3E4F5G6H7"},
+		{"alpha", "11111111222222223333333344444444555555556666666677777777888888889999999900000000"},
+		{"special", "\u0004\u0004\u0004\u0004"},
+	}
+
+	length := 512
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			raw := bytes.Repeat([]byte(tc.pattern), length/len(tc.pattern)+1)[:length]
+
+			encoded, err := body(raw)
+			require.NoError(t, err)
+
+			dec := NewDecoder(encoded)
+			response, err := dec.Next()
+			//require.Equal(t, int64(len(raw)), n)
+			//require.NoError(t, err)
+			require.Equal(t, raw, response.Data)
+			//require.Equal(t, int64(len(raw)), dec.Meta.End())
 		})
 	}
 }

@@ -313,12 +313,14 @@ func (r *Response) decodeYenc(buf []byte) (consumed int, err error) {
 	out := r.Data[offset : offset+len(buf)]
 
 	var produced int
+	var decoded []byte
 	var end End
 
-	produced, consumed, end, err = DecodeIncremental(out, buf, &r.state)
+	consumed, decoded, end, err = decodeIncremental(out, buf, &r.state)
+	produced = len(decoded)
 	if produced > 0 {
 		r.Data = r.Data[:offset+produced]
-		r.Metadata.CRC = crc32.Update(r.Metadata.CRC, crc32.IEEETable, r.Data[offset:offset+produced])
+		r.Metadata.CRC = crc32.Update(r.Metadata.CRC, crc32.IEEETable, decoded)
 		r.Metadata.BytesProduced += int64(produced)
 	}
 
