@@ -342,23 +342,18 @@ func decodeSIMDAVX2(dest, src []byte, escFirst uint64, nextMask uint16) (int, in
 					AsInt8x32())
 				// Store lower 128 bits
 				dataA.GetLo().AsUint8x16().StoreSlice(d)
-				a := bits.OnesCount64(mask & 0xffff)
 				// Store upper 128 bits
-				dataA.GetHi().AsUint8x16().Store((*[16]uint8)(unsafe.Pointer(uintptr(unsafe.Pointer(&d[16])) - uintptr(a))))
-				a += bits.OnesCount64(mask & 0xffff0000)
+				dataA.GetHi().AsUint8x16().Store((*[16]uint8)(unsafe.Pointer(uintptr(unsafe.Pointer(&d[16])) - uintptr(bits.OnesCount64(mask&0xffff)))))
 
-				mask >>= 28
 				dataB = dataB.PermuteOrZeroGrouped(new(archsimd.Uint8x32).
-					SetLo(archsimd.LoadUint8x16(&compactLUT[(mask>>4)&0x7fff])).
-					SetHi(archsimd.LoadUint8x16(&compactLUT[(mask>>20)&0x7fff])).
+					SetLo(archsimd.LoadUint8x16(&compactLUT[(mask>>32)&0x7fff])).
+					SetHi(archsimd.LoadUint8x16(&compactLUT[(mask>>48)&0x7fff])).
 					AsInt8x32())
 				// Store lower 128 bits
-				dataB.GetLo().AsUint8x16().Store((*[16]uint8)(unsafe.Pointer(uintptr(unsafe.Pointer(&d[32])) - uintptr(a))))
-				a += bits.OnesCount64(mask & 0xffff0)
+				dataB.GetLo().AsUint8x16().Store((*[16]uint8)(unsafe.Pointer(uintptr(unsafe.Pointer(&d[32])) - uintptr(bits.OnesCount64(mask&0xffffffff)))))
 				// Store upper 128 bits
-				dataB.GetHi().AsUint8x16().Store((*[16]uint8)(unsafe.Pointer(uintptr(unsafe.Pointer(&d[48])) - uintptr(a))))
-				a += bits.OnesCount64(mask & 0xffff00000)
-				produced += 64 - a
+				dataB.GetHi().AsUint8x16().Store((*[16]uint8)(unsafe.Pointer(uintptr(unsafe.Pointer(&d[48])) - uintptr(bits.OnesCount64(mask&0xffffffffffff)))))
+				produced += 64 - bits.OnesCount64(mask)
 			}
 		} else {
 			dataA = oDataA.Add(yencOffset)
