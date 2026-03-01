@@ -3,15 +3,14 @@
 package rapidyenc
 
 import (
-	"bytes"
 	"math/bits"
 	"simd/archsimd"
 	"unsafe"
 )
 
 var (
-	compactLUT [32768][16]byte
-	decode     func(dest, src []byte, state *State) (nSrc int, decoded []byte, end End, err error)
+	compactLUT        [32768][16]byte
+	decodeIncremental func(dest, src []byte, state *State) (nSrc int, decoded []byte, end End, err error)
 )
 
 func init() {
@@ -32,9 +31,9 @@ func init() {
 	}
 
 	if archsimd.X86.AVX2() {
-		decode = decodeAVX2
+		decodeIncremental = decodeAVX2
 	} else {
-		decode = decodeGeneric
+		decodeIncremental = decodeGeneric
 	}
 }
 
@@ -404,12 +403,4 @@ func fixEqMask(mask, maskShift1 uint64) uint64 {
 	// clear even bits in odd groups, whilst conversely preserving even bits in even groups
 	// the `& mask` also conveniently gets rid of unwanted trailing bits
 	return (oddGroups ^ even) & mask
-}
-
-func decodeIncremental(dst, src []byte, state *State) (int, []byte, End, error) {
-	if state == nil {
-		state = new(StateCRLF)
-	}
-
-	return decode(dst, src, state)
 }
