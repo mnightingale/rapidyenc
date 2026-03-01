@@ -129,23 +129,23 @@ func decodeSIMDAVX2(dest, src []byte, escFirst uint64, nextMask uint16) (int, in
 		minMask = broadcastDOT
 	}
 
-	mask := uint64(0)
 	n := len(src)
+	_ = dest[0]
 	for ; consumed+68 <= n; consumed += 64 {
-		s := src[consumed : consumed+68 : consumed+68]
-		d := dest[produced : produced+64 : produced+64]
-		oDataA := archsimd.LoadUint8x32Slice(s).AsInt8x32()
-		oDataB := archsimd.LoadUint8x32Slice(s[32:]).AsInt8x32()
+		s := unsafe.Pointer(uintptr(unsafe.Pointer(&src[0])) + uintptr(consumed))
+		d := unsafe.Pointer(uintptr(unsafe.Pointer(&dest[0])) + uintptr(produced))
+		oDataA := archsimd.LoadUint8x32((*[32]uint8)(s)).AsInt8x32()
+		oDataB := archsimd.LoadUint8x32((*[32]uint8)(unsafe.Pointer(uintptr(s) + uintptr(32)))).AsInt8x32()
 
 		cmpA := oDataA.Equal(specialLut.PermuteOrZeroGrouped(oDataA.AsUint8x32().Min(minMask.AsUint8x32()).AsInt8x32()))
 		cmpB := oDataB.Equal(specialLut.PermuteOrZeroGrouped(oDataB.AsUint8x32().Min(broadcastDOT.AsUint8x32()).AsInt8x32()))
-		mask = uint64(cmpB.ToBits())<<32 | uint64(cmpA.ToBits())
+		mask := uint64(cmpB.ToBits())<<32 | uint64(cmpA.ToBits())
 
 		if mask == 0 {
 			oDataA = oDataA.Add(yencOffset)
 			oDataB = oDataB.Add(broadcastNeg42)
-			oDataA.AsUint8x32().StoreSlice(d)
-			oDataB.AsUint8x32().StoreSlice(d[32:])
+			oDataA.AsUint8x32().Store((*[32]uint8)(d))
+			oDataB.AsUint8x32().Store((*[32]uint8)(unsafe.Pointer(uintptr(d) + uintptr(32))))
 			produced += 64
 			escFirst = 0
 			yencOffset = broadcastNeg42
@@ -163,8 +163,8 @@ func decodeSIMDAVX2(dest, src []byte, escFirst uint64, nextMask uint16) (int, in
 			// handle \r\n. sequences
 			// RFC3977 requires the first dot on a line to be stripped, due to dot-stuffing
 			if (isRaw || searchEnd) && mask != maskEq {
-				tmpData2A := archsimd.LoadUint8x32Slice(s[2:]).AsInt8x32()
-				tmpData2B := archsimd.LoadUint8x32Slice(s[34:]).AsInt8x32()
+				tmpData2A := archsimd.LoadUint8x32((*[32]uint8)(unsafe.Pointer(uintptr(s) + uintptr(2)))).AsInt8x32()
+				tmpData2B := archsimd.LoadUint8x32((*[32]uint8)(unsafe.Pointer(uintptr(s) + uintptr(34)))).AsInt8x32()
 
 				if searchEnd {
 					match2EqA = broadcastEQ.Equal(tmpData2A)
@@ -182,8 +182,8 @@ func decodeSIMDAVX2(dest, src []byte, escFirst uint64, nextMask uint16) (int, in
 
 				if isRaw && partialKillDotFound > 0 {
 					// merge matches for \r\n.
-					match1LfA := broadcastLF.Equal(archsimd.LoadUint8x32Slice(s[1:]).AsInt8x32())
-					match1LfB := broadcastLF.Equal(archsimd.LoadUint8x32Slice(s[33:]).AsInt8x32())
+					match1LfA := broadcastLF.Equal(archsimd.LoadUint8x32((*[32]uint8)(unsafe.Pointer(uintptr(s) + uintptr(1)))).AsInt8x32())
+					match1LfB := broadcastLF.Equal(archsimd.LoadUint8x32((*[32]uint8)(unsafe.Pointer(uintptr(s) + uintptr(33)))).AsInt8x32())
 					// force re-computing these to avoid register spills elsewhere
 					match1NlA = match1LfA.And(broadcastCR.Equal(oDataA))
 					match1NlB = match1LfB.And(broadcastCR.Equal(oDataB))
@@ -191,11 +191,13 @@ func decodeSIMDAVX2(dest, src []byte, escFirst uint64, nextMask uint16) (int, in
 					match2NlDotB := match2CrXDtB.And(match1NlB)
 
 					if searchEnd {
-						tmpData4A := archsimd.LoadUint8x32Slice(s[4:]).AsInt8x32()
-						tmpData4B := archsimd.LoadUint8x32Slice(s[36:]).AsInt8x32()
+						tmpData4A := archsimd.LoadUint8x32((*[32]uint8)(unsafe.Pointer(uintptr(s) + uintptr(4)))).AsInt8x32()
+						tmpData4B := archsimd.LoadUint8x32((*[32]uint8)(unsafe.Pointer(uintptr(s) + uintptr(36)))).AsInt8x32()
 						// match instances of \r\n.\r\n and \r\n.=y
-						match3CrA := broadcastCR.Equal(archsimd.LoadUint8x32Slice(s[3:]).AsInt8x32())
-						match3CrB := broadcastCR.Equal(archsimd.LoadUint8x32Slice(s[35:]).AsInt8x32())
+						match3A := archsimd.LoadUint8x32((*[32]uint8)(unsafe.Pointer(uintptr(s) + uintptr(3)))).AsInt8x32()
+						match3B := archsimd.LoadUint8x32((*[32]uint8)(unsafe.Pointer(uintptr(s) + uintptr(35)))).AsInt8x32()
+						match3CrA := broadcastCR.Equal(match3A)
+						match3CrB := broadcastCR.Equal(match3B)
 						match4LfA := tmpData4A.Equal(broadcastLF)
 						match4LfB := tmpData4B.Equal(broadcastLF)
 						match4EqYAw := tmpData4A.AsInt16x16().Equal(broadcastEQY) // =y
@@ -203,8 +205,8 @@ func decodeSIMDAVX2(dest, src []byte, escFirst uint64, nextMask uint16) (int, in
 
 						var matchEnd uint32
 						{
-							match3EqYA := match2EqA.And(broadcastY.Equal(archsimd.LoadUint8x32Slice(s[3:]).AsInt8x32()))
-							match3EqYB := match2EqB.And(broadcastY.Equal(archsimd.LoadUint8x32Slice(s[35:]).AsInt8x32()))
+							match3EqYA := match2EqA.And(broadcastY.Equal(match3A))
+							match3EqYB := match2EqB.And(broadcastY.Equal(match3B))
 							match4EqYA := match4EqYAw.ToInt16x16().ShiftAllLeft(8).AsInt8x32().ToMask()
 							match4EqYB := match4EqYBw.ToInt16x16().ShiftAllLeft(8).AsInt8x32().ToMask()
 							// merge \r\n and =y matches for tmpData4
@@ -224,9 +226,9 @@ func decodeSIMDAVX2(dest, src []byte, escFirst uint64, nextMask uint16) (int, in
 							// terminator found
 							// there's probably faster ways to do this, but reverting to scalar code should be good enough
 							if isRaw {
-								if s[0] == '.' {
+								if *(*uint8)(s) == '.' {
 									nextMask = uint16(mask) & 1
-								} else if s[1] == '.' {
+								} else if *(*uint8)(unsafe.Pointer(uintptr(s) + uintptr(1))) == '.' {
 									nextMask = uint16(mask) & 2
 								} else {
 									nextMask = 0
@@ -250,8 +252,8 @@ func decodeSIMDAVX2(dest, src []byte, escFirst uint64, nextMask uint16) (int, in
 					partialEndFound := false
 					var match3EqYA, match3EqYB archsimd.Mask8x32
 					{
-						match3YA := broadcastY.Equal(archsimd.LoadUint8x32Slice(s[3:]).AsInt8x32())
-						match3YB := broadcastY.Equal(archsimd.LoadUint8x32Slice(s[35:]).AsInt8x32())
+						match3YA := broadcastY.Equal(archsimd.LoadUint8x32((*[32]uint8)(unsafe.Pointer(uintptr(s) + uintptr(3)))).AsInt8x32())
+						match3YB := broadcastY.Equal(archsimd.LoadUint8x32((*[32]uint8)(unsafe.Pointer(uintptr(s) + uintptr(35)))).AsInt8x32())
 						match3EqYA = match2EqA.And(match3YA)
 						match3EqYB = match2EqB.And(match3YB)
 						partialEndFound = match3EqYA.Or(match3EqYB).ToBits() > 0
@@ -259,17 +261,17 @@ func decodeSIMDAVX2(dest, src []byte, escFirst uint64, nextMask uint16) (int, in
 					if partialEndFound {
 						endFound := false
 						{
-							match1LfA := broadcastLF.Equal(archsimd.LoadUint8x32Slice(s[1:]).AsInt8x32())
-							match1LfB := broadcastLF.Equal(archsimd.LoadUint8x32Slice(s[33:]).AsInt8x32())
+							match1LfA := broadcastLF.Equal(archsimd.LoadUint8x32((*[32]uint8)(unsafe.Pointer(uintptr(s) + uintptr(1)))).AsInt8x32())
+							match1LfB := broadcastLF.Equal(archsimd.LoadUint8x32((*[32]uint8)(unsafe.Pointer(uintptr(s) + uintptr(33)))).AsInt8x32())
 							a := match3EqYA.And(match1LfA.And(oDataA.Equal(broadcastCR)))
 							b := match3EqYB.And(match1LfB.And(oDataB.Equal(broadcastCR)))
 							endFound = a.Or(b).ToBits() > 0
 						}
 						if endFound {
 							if isRaw {
-								if s[0] == '.' {
+								if *(*uint8)(s) == '.' {
 									nextMask = uint16(mask) & 1
-								} else if s[1] == '.' {
+								} else if *(*uint8)(unsafe.Pointer(uintptr(s) + uintptr(1))) == '.' {
 									nextMask = uint16(mask) & 2
 								} else {
 									nextMask = 0
@@ -319,7 +321,7 @@ func decodeSIMDAVX2(dest, src []byte, escFirst uint64, nextMask uint16) (int, in
 					)
 					vecB := broadcastNeg106.Merge(
 						broadcastNeg42,
-						broadcastEQ.Equal(archsimd.LoadUint8x32Slice(s[31:]).AsInt8x32()),
+						broadcastEQ.Equal(archsimd.LoadUint8x32((*[32]uint8)(unsafe.Pointer(uintptr(s)+uintptr(31)))).AsInt8x32()),
 					)
 					oDataA = oDataA.Add(vecA)
 					oDataB = oDataB.Add(vecB)
@@ -339,18 +341,18 @@ func decodeSIMDAVX2(dest, src []byte, escFirst uint64, nextMask uint16) (int, in
 					SetHi(archsimd.LoadUint8x16(&compactLUT[(mask>>16)&0x7fff])).
 					AsInt8x32())
 				// Store lower 128 bits
-				oDataA.GetLo().AsUint8x16().StoreSlice(d)
+				oDataA.GetLo().AsUint8x16().Store((*[16]uint8)(d))
 				// Store upper 128 bits
-				oDataA.GetHi().AsUint8x16().Store((*[16]uint8)(unsafe.Pointer(uintptr(unsafe.Pointer(&d[16])) - uintptr(bits.OnesCount64(mask&0xffff)))))
+				oDataA.GetHi().AsUint8x16().Store((*[16]uint8)(unsafe.Pointer(uintptr(d) + uintptr(16-bits.OnesCount64(mask&0xffff)))))
 
 				oDataB = oDataB.PermuteOrZeroGrouped(new(archsimd.Uint8x32).
 					SetLo(archsimd.LoadUint8x16(&compactLUT[(mask>>32)&0x7fff])).
 					SetHi(archsimd.LoadUint8x16(&compactLUT[(mask>>48)&0x7fff])).
 					AsInt8x32())
 				// Store lower 128 bits
-				oDataB.GetLo().AsUint8x16().Store((*[16]uint8)(unsafe.Pointer(uintptr(unsafe.Pointer(&d[32])) - uintptr(bits.OnesCount64(mask&0xffffffff)))))
+				oDataB.GetLo().AsUint8x16().Store((*[16]uint8)(unsafe.Pointer(uintptr(d) + uintptr(32-bits.OnesCount64(mask&0xffffffff)))))
 				// Store upper 128 bits
-				oDataB.GetHi().AsUint8x16().Store((*[16]uint8)(unsafe.Pointer(uintptr(unsafe.Pointer(&d[48])) - uintptr(bits.OnesCount64(mask&0xffffffffffff)))))
+				oDataB.GetHi().AsUint8x16().Store((*[16]uint8)(unsafe.Pointer(uintptr(d) + uintptr(48-bits.OnesCount64(mask&0xffffffffffff)))))
 				produced += 64 - bits.OnesCount64(mask)
 			}
 		}
