@@ -141,7 +141,15 @@ func decodeSIMDAVX2(dest, src []byte, escFirst uint64, nextMask uint16) (int, in
 		cmpB := oDataB.Equal(specialLut.PermuteOrZeroGrouped(oDataB.AsUint8x32().Min(broadcastDOT.AsUint8x32()).AsInt8x32()))
 		mask = uint64(cmpB.ToBits())<<32 | uint64(cmpA.ToBits())
 
-		if mask != 0 {
+		if mask == 0 {
+			oDataA = oDataA.Add(yencOffset)
+			oDataB = oDataB.Add(broadcastNeg42)
+			oDataA.AsUint8x32().StoreSlice(d)
+			oDataB.AsUint8x32().StoreSlice(d[32:])
+			produced += 64
+			escFirst = 0
+			yencOffset = broadcastNeg42
+		} else {
 			cmpEqA := oDataA.Equal(broadcastEQ)
 			cmpEqB := oDataB.Equal(broadcastEQ)
 			maskEq := uint64(cmpEqB.ToBits())<<32 | uint64(cmpEqA.ToBits())
@@ -345,14 +353,6 @@ func decodeSIMDAVX2(dest, src []byte, escFirst uint64, nextMask uint16) (int, in
 				oDataB.GetHi().AsUint8x16().Store((*[16]uint8)(unsafe.Pointer(uintptr(unsafe.Pointer(&d[48])) - uintptr(bits.OnesCount64(mask&0xffffffffffff)))))
 				produced += 64 - bits.OnesCount64(mask)
 			}
-		} else {
-			dataA = oDataA.Add(yencOffset)
-			dataB = oDataB.Add(broadcastNeg42)
-			dataA.AsUint8x32().StoreSlice(d)
-			dataB.AsUint8x32().StoreSlice(d[32:])
-			produced += 64
-			escFirst = 0
-			yencOffset = broadcastNeg42
 		}
 	}
 	return consumed, produced, escFirst, nextMask
