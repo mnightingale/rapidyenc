@@ -45,7 +45,7 @@ func encodeGeneric(lineSize int, colOffset *int, src []byte, dest []byte, doEnd 
 		c := src[pos]
 		pos++
 		if escaped := escapedLUT[c]; escaped != 0 {
-			binary.NativeEndian.PutUint16(dest[write:], escapedLUT[c])
+			binary.LittleEndian.PutUint16(dest[write:], escapedLUT[c])
 			write += 2
 			col = 2
 		} else {
@@ -66,7 +66,7 @@ func encodeGeneric(lineSize int, colOffset *int, src []byte, dest []byte, doEnd 
 					dest[write] = escaped
 					write++
 				} else {
-					binary.NativeEndian.PutUint16(dest[write:], escapedLUT[c])
+					binary.LittleEndian.PutUint16(dest[write:], escapedLUT[c])
 					write += 2
 				}
 			}
@@ -88,7 +88,7 @@ func encodeGeneric(lineSize int, colOffset *int, src []byte, dest []byte, doEnd 
 				write++
 				col++
 			} else {
-				binary.NativeEndian.PutUint16(dest[write:], escapedLUT[c])
+				binary.LittleEndian.PutUint16(dest[write:], escapedLUT[c])
 				write += 2
 				col += 2
 			}
@@ -101,7 +101,7 @@ func encodeGeneric(lineSize int, colOffset *int, src []byte, dest []byte, doEnd 
 			c := src[pos]
 			pos++
 			if escapedLUT[c] != 0 && c != '.'-42 {
-				binary.NativeEndian.PutUint16(dest[write:], escapedLUT[c])
+				binary.LittleEndian.PutUint16(dest[write:], escapedLUT[c])
 				write += 2
 			} else {
 				dest[write] = c + 42
@@ -116,12 +116,12 @@ func encodeGeneric(lineSize int, colOffset *int, src []byte, dest []byte, doEnd 
 		c := src[pos]
 		pos++
 		if escaped := escapedLUT[c]; escaped != 0 {
-			binary.NativeEndian.PutUint32(dest[write:], '\r'|('\n'<<8)|(uint32(escaped)<<16))
+			binary.LittleEndian.PutUint32(dest[write:], '\r'|('\n'<<8)|(uint32(escaped)<<16))
 			write += 4
 			col = 2
 		} else {
 			// #define UINT32_PACK(a, b, c, d) ((a) | ((b) << 8) | ((c) << 16) | ((d) << 24))
-			binary.NativeEndian.PutUint32(dest[write:], '\r'|('\n'<<8)|(uint32(c+42)<<16))
+			binary.LittleEndian.PutUint32(dest[write:], '\r'|('\n'<<8)|(uint32(c+42)<<16))
 			write += 3
 			col = 1
 		}
