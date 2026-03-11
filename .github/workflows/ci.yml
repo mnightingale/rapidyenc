@@ -19,9 +19,12 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - name: cgo-enabled
+          - name: cgo
             cgo_enabled: 1
             goexperiment: ""
+          - name: cgo-simd
+            cgo_enabled: 1
+            goexperiment: "simd"
           - name: no-cgo-simd
             cgo_enabled: 0
             goexperiment: simd

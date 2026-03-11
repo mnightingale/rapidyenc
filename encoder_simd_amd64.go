@@ -1,4 +1,4 @@
-//go:build !cgo && goexperiment.simd
+//go:build goexperiment.simd
 
 package rapidyenc
 
@@ -8,14 +8,14 @@ import (
 )
 
 var (
-	encode func(lineSize int, colOffset *int, src []byte, dest []byte, doEnd bool) []byte
+	encodeIncremental func(lineSize int, colOffset *int, src []byte, dest []byte, doEnd bool) []byte
 )
 
 func init() {
 	if archsimd.X86.AVX2() {
-		encode = encodeAVX2
+		encodeIncremental = encodeAVX2
 	} else {
-		encode = encodeGeneric
+		encodeIncremental = encodeGeneric
 	}
 }
 
@@ -419,12 +419,4 @@ func encodeEOLHandle(
 	cmpB := dataB.Equal(encoderSpecialLUT.PermuteOrZeroGrouped(dataB.Abs()))
 
 	return pos, col, wp, dataA, dataB, cmpA, cmpB, true
-}
-
-func encodeIncremental(lineLength int, column *int, src []byte, dest []byte, isEnd bool) []byte {
-	if column == nil {
-		column = new(int)
-	}
-
-	return encode(lineLength, column, src, dest, isEnd)
 }

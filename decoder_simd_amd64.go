@@ -1,4 +1,4 @@
-//go:build !cgo && goexperiment.simd
+//go:build goexperiment.simd
 
 package rapidyenc
 

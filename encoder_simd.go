@@ -1,4 +1,4 @@
-//go:build !cgo && goexperiment.simd
+//go:build !cgo && goexperiment.simd && amd64
 
 package rapidyenc
 
@@ -14,16 +14,15 @@ func encodeSIMD(
 	if length < 1 {
 		return dest[:0]
 	}
-
-	if length < 12 {
-		return encodeGeneric(lineSize, colOffset, src, dest, doEnd)
-	}
-
 	if colOffset == nil {
 		colOffset = new(int)
 	}
 	if *colOffset < 0 {
 		*colOffset = 0
+	}
+
+	if length < 12 {
+		return encodeGeneric(lineSize, colOffset, src, dest, doEnd)
 	}
 
 	consumed, written := kernel(lineSize, colOffset, src, dest)
