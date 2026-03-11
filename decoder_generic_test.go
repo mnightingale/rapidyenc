@@ -19,9 +19,8 @@ func TestDecodeGeneric(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			state := tc.state
 			dest := make([]byte, len(tc.raw))
-			n, d, _, err := decodeGeneric(dest, []byte(tc.raw), &state)
+			n, d, _, err := decodeGeneric(dest, []byte(tc.raw), new(tc.state))
 			require.NoError(t, err)
 			require.Equal(t, n, len(tc.raw))
 			require.Equal(t, []byte(tc.expected), d)
