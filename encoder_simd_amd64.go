@@ -1,4 +1,4 @@
-//go:build goexperiment.simd
+//go:build !cgo && goexperiment.simd
 
 package rapidyenc
 
@@ -383,7 +383,7 @@ func encodeSIMDAVX2(lineSize int, colOffset *int, src []byte, dest []byte) (int,
 // encodeEOLHandle handles end-of-line processing and prepares next iteration.
 // It writes the EOL character and reloads the next two vectors.
 func encodeEOLHandle(
-		src []byte, pos, col, wp int, dest []byte, lineSizeOffset int,
+	src []byte, pos, col, wp int, dest []byte, lineSizeOffset int,
 ) (int, int, int, archsimd.Int8x32, archsimd.Int8x32, archsimd.Mask8x32, archsimd.Mask8x32, bool) {
 	const vecSize = 32
 	const chunk = vecSize * 2
