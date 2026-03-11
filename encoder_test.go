@@ -6,6 +6,7 @@ import (
 	"hash/crc32"
 	"io"
 	randv2 "math/rand/v2"
+	"slices"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -32,7 +33,13 @@ func TestEncoderSimple(t *testing.T) {
 			input := bytes.NewReader(tc.input)
 
 			encoded := new(bytes.Buffer)
-			w, err := NewEncoder(encoded, Meta{}, WithRaw())
+			w, err := NewEncoder(encoded, Meta{
+				FileName:   "filename",
+				FileSize:   int64(len(tc.input)),
+				PartSize:   int64(len(tc.input)),
+				PartNumber: 1,
+				TotalParts: 1,
+			})
 			require.NoError(t, err)
 			_, err = io.Copy(w, input)
 			require.NoError(t, err)
@@ -40,16 +47,19 @@ func TestEncoderSimple(t *testing.T) {
 			require.NoError(t, err)
 
 			// Check contains the expected encoded value
-			require.True(t, bytes.Equal(encoded.Bytes(), tc.expected))
+			require.Contains(t, string(encoded.Bytes()), string(slices.Concat([]byte("\r\n"), tc.expected, []byte("\r\n"))))
 
-			//// Check that we can decode it back again
-			//dec := NewDecoder(encoded, WithStatusLineAlreadyRead())
-			//response, err := dec.Next()
-			//require.NoError(t, err)
-			//require.Equal(t, tc.input, response.Data)
-			//require.Equal(t, int64(len(tc.input)), response.Metadata.PartSize)
-			//require.Equal(t, crc32.ChecksumIEEE(tc.input), response.Metadata.CRC)
-			//require.Equal(t, int64(len(tc.input)), response.Metadata.End())
+			// Decoder reads until NNTP ".\r\n"
+			encoded.WriteString(".\r\n")
+
+			// Check that we can decode it back again
+			dec := NewDecoder(encoded, WithStatusLineAlreadyRead())
+			response, err := dec.Next()
+			require.NoError(t, err)
+			require.Equal(t, tc.input, response.Data)
+			require.Equal(t, int64(len(tc.input)), response.Metadata.PartSize)
+			require.Equal(t, crc32.ChecksumIEEE(tc.input), response.Metadata.CRC)
+			require.Equal(t, int64(len(tc.input)), response.Metadata.End())
 		})
 	}
 }
@@ -59,8 +69,14 @@ func TestEncoder(t *testing.T) {
 	_, err := randv2.NewChaCha8([32]byte(bytes.Repeat([]byte{0xBA, 0xAD, 0xF0, 0x0D}, 8))).Read(raw)
 	require.NoError(t, err)
 
-	encodedHash := crc32.NewIEEE()
-	w, err := NewEncoder(encodedHash, Meta{}, WithRaw())
+	encoded := new(bytes.Buffer)
+	w, err := NewEncoder(encoded, Meta{
+		FileName:   "filename",
+		FileSize:   int64(len(raw)),
+		PartSize:   int64(len(raw)),
+		PartNumber: 1,
+		TotalParts: 1,
+	})
 	require.NoError(t, err)
 	_, err = io.Copy(w, bytes.NewReader(raw))
 	require.NoError(t, err)
@@ -68,7 +84,15 @@ func TestEncoder(t *testing.T) {
 	require.NoError(t, err)
 
 	require.Equal(t, uint32(0xa623f24e), w.hash.Sum32())
-	require.Equal(t, uint32(0x599eab9e), encodedHash.Sum32())
+
+	// Decoder reads until NNTP ".\r\n"
+	encoded.WriteString(".\r\n")
+
+	// Check that we can decode it back again
+	dec := NewDecoder(encoded, WithStatusLineAlreadyRead())
+	response, err := dec.Next()
+	require.NoError(t, err)
+	require.Equal(t, raw, response.Data)
 }
 
 func BenchmarkEncoder(b *testing.B) {
