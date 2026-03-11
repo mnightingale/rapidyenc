@@ -32,8 +32,10 @@ func init() {
 
 	if archsimd.X86.AVX2() {
 		decodeIncremental = decodeAVX2
+		decoderKernel = "AVX2"
 	} else {
 		decodeIncremental = decodeGeneric
+		decoderKernel = "generic"
 	}
 }
 

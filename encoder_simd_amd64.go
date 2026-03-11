@@ -14,8 +14,10 @@ var (
 func init() {
 	if archsimd.X86.AVX2() {
 		encodeIncremental = encodeAVX2
+		encoderKernel = "AVX2"
 	} else {
 		encodeIncremental = encodeGeneric
+		encoderKernel = "generic"
 	}
 }
 
