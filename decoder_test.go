@@ -61,7 +61,7 @@ func TestDecodePattern(t *testing.T) {
 			encoded, err := body(raw)
 			require.NoError(t, err)
 
-			dec := NewDecoder(encoded)
+			dec := NewDecoder(encoded, WithStatusLineAlreadyRead())
 			response, err := dec.Next()
 			//require.Equal(t, int64(len(raw)), n)
 			//require.NoError(t, err)
