@@ -47,6 +47,9 @@ func (r *Response) feed(buf []byte) (consumed int, done bool, err error) {
 }
 
 func (r *Response) metaError() error {
+	if !isMultiline(r.Metadata.StatusCode) {
+		return nil
+	}
 	if r.Metadata.Format == FormatUU {
 		return nil
 	}
