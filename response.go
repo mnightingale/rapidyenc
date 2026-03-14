@@ -32,15 +32,10 @@ const nntpArtiicle = 220
 const nntpHead = 221
 const nntpCapabilities = 101
 
-func newResponseFeeder(dataFunc func() []byte) *Response {
-	return &Response{
-		dataFunc: dataFunc,
-	}
-}
-
 // feed consumes raw NNTP protocol bytes from buf, writing any decoded payload bytes to r.Data.
 func (r *Response) feed(buf []byte) (consumed int, done bool, err error) {
 	n, err := r.decode(buf)
+	r.Metadata.BytesConsumed += int64(n)
 
 	if err != nil {
 		return n, false, err

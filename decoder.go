@@ -60,7 +60,10 @@ type streamFeeder interface {
 // Next reads from r until a complete response is decoded.
 // If r is a net.Conn, the caller is responsible for settings deadlines.
 func (d *Decoder) Next() (*Response, error) {
-	response := newResponseFeeder(d.dataFunc)
+	response := &Response{
+		hasStatusLine: !d.statusLineConsumed,
+		dataFunc:      d.dataFunc,
+	}
 
 	if err := d.rb.feedUntilDone(d.r, response); err != nil {
 		if !response.eof && errors.Is(err, io.EOF) {
