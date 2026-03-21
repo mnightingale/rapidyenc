@@ -3,9 +3,9 @@ package rapidyenc
 import (
 	"bufio"
 	"bytes"
-	"crypto/rand"
 	"fmt"
 	"io"
+	"math/rand"
 	"os"
 	"sync"
 	"testing"
@@ -160,7 +160,7 @@ func TestSplitReads(t *testing.T) {
 
 func BenchmarkDecoder(b *testing.B) {
 	raw := make([]byte, 1024*1024)
-	_, err := rand.Read(raw)
+	_, err := rand.New(rand.NewSource(42)).Read(raw)
 	require.NoError(b, err)
 
 	r, err := body(raw)
