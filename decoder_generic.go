@@ -1,8 +1,8 @@
 package rapidyenc
 
-func decodeGeneric(dest, src []byte, state *State) (nSrc int, decoded []byte, end End, err error) {
+func decodeGeneric(dest, src []byte, state State) (nSrc int, decoded []byte, pState State, end End, err error) {
 	if len(src) < 1 {
-		return 0, nil, EndNone, nil
+		return 0, nil, state, EndNone, nil
 	}
 
 	length := len(src)
@@ -11,13 +11,13 @@ func decodeGeneric(dest, src []byte, state *State) (nSrc int, decoded []byte, en
 
 	checkEnd := func(s State) bool {
 		if pos >= length {
-			*state = s
+			state = s
 			return true
 		}
 		return false
 	}
 
-	switch *state {
+	switch state {
 	case StateCRLF:
 		goto StateCRLF
 	case StateEQ:
@@ -36,8 +36,8 @@ func decodeGeneric(dest, src []byte, state *State) (nSrc int, decoded []byte, en
 
 StateCRLFEQ:
 	if src[pos] == 'y' {
-		*state = StateNone
-		return pos + 1, dest[:write], EndControl, nil
+		state = StateNone
+		return pos + 1, dest[:write], state, EndControl, nil
 	}
 StateEQ:
 	{
@@ -49,7 +49,7 @@ StateEQ:
 			goto done
 		}
 		if ok := checkEnd(StateCR); ok {
-			return pos, dest[:write], EndNone, nil
+			return pos, dest[:write], state, EndNone, nil
 		}
 	}
 StateCR:
@@ -58,18 +58,18 @@ StateCR:
 	}
 	pos++
 	if ok := checkEnd(StateCRLF); ok {
-		return pos, dest[:write], EndNone, nil
+		return pos, dest[:write], state, EndNone, nil
 	}
 StateCRLF:
 	if src[pos] == '.' {
 		pos++
 		if ok := checkEnd(StateCRLFDT); ok {
-			return pos, dest[:write], EndNone, nil
+			return pos, dest[:write], state, EndNone, nil
 		}
 	} else if src[pos] == '=' {
 		pos++
 		if ok := checkEnd(StateCRLFEQ); ok {
-			return pos, dest[:write], EndNone, nil
+			return pos, dest[:write], state, EndNone, nil
 		}
 		goto StateCRLFEQ
 	} else {
@@ -79,12 +79,12 @@ StateCRLFDT:
 	if src[pos] == '\r' {
 		pos++
 		if ok := checkEnd(StateCRLFDTCR); ok {
-			return pos, dest[:write], EndNone, nil
+			return pos, dest[:write], state, EndNone, nil
 		}
 	} else if src[pos] == '=' {
 		pos++
 		if ok := checkEnd(StateCRLFEQ); ok {
-			return pos, dest[:write], EndNone, nil
+			return pos, dest[:write], state, EndNone, nil
 		}
 		goto StateCRLFEQ
 	} else {
@@ -92,8 +92,8 @@ StateCRLFDT:
 	}
 StateCRLFDTCR:
 	if src[pos] == '\n' {
-		*state = StateCRLF
-		return pos + 1, dest[:write], EndArticle, nil
+		state = StateCRLF
+		return pos + 1, dest[:write], state, EndArticle, nil
 	}
 
 done:
@@ -105,27 +105,27 @@ done:
 				if src[pos+2] == '.' {
 					pos += 3
 					if ok := checkEnd(StateCRLFDT); ok {
-						return pos, dest[:write], EndNone, nil
+						return pos, dest[:write], state, EndNone, nil
 					}
 					switch src[pos] {
 					case '\r':
 						pos++
 						if ok := checkEnd(StateCRLFDTCR); ok {
-							return pos, dest[:write], EndNone, nil
+							return pos, dest[:write], state, EndNone, nil
 						}
 						if src[pos] == '\n' {
-							*state = StateCRLF
-							return pos + 1, dest[:write], EndArticle, nil
+							state = StateCRLF
+							return pos + 1, dest[:write], state, EndArticle, nil
 						}
 						pos--
 					case '=':
 						pos++
 						if ok := checkEnd(StateCRLFEQ); ok {
-							return pos, dest[:write], EndNone, nil
+							return pos, dest[:write], state, EndNone, nil
 						}
 						if src[pos] == 'y' {
-							*state = StateNone
-							return pos + 1, dest[:write], EndControl, nil
+							state = StateNone
+							return pos + 1, dest[:write], state, EndControl, nil
 						}
 						c := src[pos]
 						dest[write] = c - 42 - 64
@@ -140,11 +140,11 @@ done:
 				} else if src[pos+2] == '=' {
 					pos += 3
 					if ok := checkEnd(StateCRLFEQ); ok {
-						return pos, dest[:write], EndNone, nil
+						return pos, dest[:write], state, EndNone, nil
 					}
 					if src[pos] == 'y' {
-						*state = StateNone
-						return pos + 1, dest[:write], EndControl, nil
+						state = StateNone
+						return pos + 1, dest[:write], state, EndControl, nil
 					}
 					c := src[pos]
 					dest[write] = c - 42 - 64
@@ -171,7 +171,7 @@ done:
 		}
 	}
 
-	*state = StateNone
+	state = StateNone
 
 	// 2nd last char
 	if pos == length-2 {
@@ -179,8 +179,8 @@ done:
 		switch c {
 		case '\r':
 			if src[pos+1] == '\n' {
-				*state = StateCRLF
-				return pos, dest[:write], EndNone, nil
+				state = StateCRLF
+				return pos, dest[:write], state, EndNone, nil
 			}
 			fallthrough
 		case '\n':
@@ -206,18 +206,18 @@ done:
 		if c != '\n' && c != '\r' && c != '=' {
 			dest[write] = c - 42
 			write++
-		} else if state != nil {
+		} else {
 			switch c {
 			case '=':
-				*state = StateEQ
+				state = StateEQ
 			case '\r':
-				*state = StateCR
+				state = StateCR
 			default:
-				*state = StateNone
+				state = StateNone
 			}
 		}
 		pos++
 	}
 
-	return pos, dest[:write], EndNone, nil
+	return pos, dest[:write], state, EndNone, nil
 }

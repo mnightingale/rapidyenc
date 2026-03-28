@@ -10,7 +10,7 @@ import (
 
 var (
 	compactLUT        [32768][16]byte
-	decodeIncremental func(dest, src []byte, state *State) (nSrc int, decoded []byte, end End, err error)
+	decodeIncremental func(dest, src []byte, state State) (nSrc int, decoded []byte, pState State, end End, err error)
 )
 
 func init() {
@@ -39,7 +39,7 @@ func init() {
 	}
 }
 
-func decodeAVX2(dest, src []byte, state *State) (nSrc int, decoded []byte, end End, err error) {
+func decodeAVX2(dest, src []byte, state State) (nSrc int, decoded []byte, pState State, end End, err error) {
 	return decodeSIMD(64, dest, src, state, decodeSIMDAVX2)
 }
 

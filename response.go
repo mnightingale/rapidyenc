@@ -324,7 +324,7 @@ func (r *Response) decodeYenc(buf []byte) (consumed int, err error) {
 	var decoded []byte
 	var end End
 
-	consumed, decoded, end, err = decodeIncremental(out, buf, &r.state)
+	consumed, decoded, r.state, end, err = decodeIncremental(out, buf, r.state)
 	produced = len(decoded)
 	if produced > 0 {
 		r.Data = r.Data[:offset+produced]
