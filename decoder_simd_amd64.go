@@ -321,7 +321,7 @@ func decodeSIMDAVX2(dest, src []byte, escFirst uint64, nextMask uint16) (int, in
 						yencOffset,
 						cmpEqA.ToInt8x32().AsUint8x32().ConcatShiftBytesRightGrouped(
 							15,
-							cmpEqA.ToInt8x32().AsUint8x32().SetHi(cmpEqA.ToInt8x32().AsUint8x32().GetLo()).SetLo(broadcastEQ.GetLo().AsUint8x16()),
+							cmpEqA.ToInt8x32().Select128FromPair(2, 0, broadcastEQ).AsUint8x32(),
 						).Equal(broadcastFF),
 					)
 					vecB := broadcastNeg106.Merge(
