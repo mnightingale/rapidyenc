@@ -30,15 +30,15 @@ func maybeInitDecode() {
 }
 
 // decodeIncremental stops decoding when a yEnc/NNTP end sequence is found
-func decodeIncremental(dst, src []byte, state *State) (nSrc int, decoded []byte, end End, err error) {
+func decodeIncremental(dst, src []byte, state State) (nSrc int, decoded []byte, pState State, end End, err error) {
 	maybeInitDecode()
 
 	if len(src) == 0 {
-		return 0, nil, EndNone, nil
+		return 0, nil, state, EndNone, nil
 	}
 
 	if len(dst) < len(src) {
-		return 0, nil, 0, errDestinationTooSmall
+		return 0, nil, state, EndNone, errDestinationTooSmall
 	}
 
 	var cnSrc, cnDest C.size_t
@@ -49,8 +49,8 @@ func decodeIncremental(dst, src []byte, state *State) (nSrc int, decoded []byte,
 		C.size_t(len(src)),
 		&cnSrc,
 		&cnDest,
-		(*C.RapidYencDecoderState)(unsafe.Pointer(state)),
+		(*C.RapidYencDecoderState)(unsafe.Pointer(&state)),
 	))
 
-	return int(cnSrc), dst[:cnDest], result, nil
+	return int(cnSrc), dst[:cnDest], state, result, nil
 }
