@@ -5,16 +5,8 @@ package rapidyenc
 */
 import "C"
 import (
-	"fmt"
 	"sync"
 )
-
-var version = int(C.rapidyenc_version())
-
-// Version returns the version of the backing rapidyenc library.
-func Version() string {
-	return fmt.Sprintf("%d.%d.%d", version>>16&0xff, version>>8&0xff, version&0xff)
-}
 
 var (
 	decodeKernel     int
