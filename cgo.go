@@ -1,8 +1,6 @@
 package rapidyenc
 
 /*
-#cgo noescape rapidyenc_version
-#cgo nocallback rapidyenc_version
 #cgo noescape rapidyenc_decode_init
 #cgo nocallback rapidyenc_decode_init
 #cgo noescape rapidyenc_decode_kernel
