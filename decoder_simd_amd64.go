@@ -51,6 +51,7 @@ var (
 	minMask1, minMask2                                              archsimd.Int8x32
 	permuteA, permuteB                                              archsimd.Int8x32
 	permuteBitMask                                                  archsimd.Uint8x32
+	broadcastFF                                                     archsimd.Uint8x32
 )
 
 func init() {
@@ -96,6 +97,7 @@ func init() {
 	broadcastEQY = archsimd.BroadcastInt16x16(0x793d)
 	broadcastY = archsimd.BroadcastInt8x32('y')
 	broadcastNeg106 = archsimd.BroadcastInt8x32(-42 - 64)
+	broadcastFF = archsimd.BroadcastUint8x32(0xff)
 }
 
 func decodeSIMDAVX2(dest, src []byte, escFirst uint64, nextMask uint16) (int, int, uint64, uint16) {
@@ -319,8 +321,8 @@ func decodeSIMDAVX2(dest, src []byte, escFirst uint64, nextMask uint16) (int, in
 						yencOffset,
 						cmpEqA.ToInt8x32().AsUint8x32().ConcatShiftBytesRightGrouped(
 							15,
-							archsimd.BroadcastInt8x32('=').SetHi(cmpEqA.ToInt8x32().GetLo()).AsUint8x32(),
-						).Equal(archsimd.BroadcastUint8x32(0xff)),
+							cmpEqA.ToInt8x32().AsUint8x32().SetHi(cmpEqA.ToInt8x32().AsUint8x32().GetLo()).SetLo(broadcastEQ.GetLo().AsUint8x16()),
+						).Equal(broadcastFF),
 					)
 					vecB := broadcastNeg106.Merge(
 						broadcastNeg42,
