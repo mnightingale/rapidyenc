@@ -14,7 +14,7 @@ func decodeSIMD(
 	state State,
 	kernel func(dest, src []byte, escFirst uint64, nextMask uint16) (int, int, uint64, uint16),
 ) (nSrc int, decoded []byte, pState State, end End, err error) {
-	const isRaw = true
+	const dotUnstuffing = true
 	const searchEnd = true
 	length := len(src)
 
@@ -39,10 +39,10 @@ func decodeSIMD(
 	lenBuffer := width - 1
 	if searchEnd {
 		lenBuffer += 3
-		if isRaw {
+		if dotUnstuffing {
 			lenBuffer += 1
 		}
-	} else if isRaw {
+	} else if dotUnstuffing {
 		lenBuffer += 3
 	}
 
@@ -52,7 +52,7 @@ func decodeSIMD(
 
 		switch state {
 		case StateCRLF:
-			if isRaw && src[0] == '.' {
+			if dotUnstuffing && src[0] == '.' {
 				nextMask = 1
 				if searchEnd && bytes.Equal(src[1:], []byte("\r\n")) {
 					state = StateCRLF
@@ -67,7 +67,7 @@ func decodeSIMD(
 				return 2, dest[:0], state, EndControl, nil
 			}
 		case StateCR:
-			if isRaw && len(src) >= 2 && src[0] == '\n' && src[1] == '.' {
+			if dotUnstuffing && len(src) >= 2 && src[0] == '\n' && src[1] == '.' {
 				nextMask = 2
 				if searchEnd && bytes.Equal(src[2:], []byte("\r\n")) {
 					state = StateCRLF

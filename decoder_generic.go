@@ -5,6 +5,7 @@ func decodeGeneric(dest, src []byte, state State) (nSrc int, decoded []byte, pSt
 		return 0, nil, state, EndNone, nil
 	}
 
+	dotUnstuffing := true
 	length := len(src)
 	pos := 0
 	write := 0
@@ -61,7 +62,7 @@ StateCR:
 		return pos, dest[:write], state, EndNone, nil
 	}
 StateCRLF:
-	if src[pos] == '.' {
+	if dotUnstuffing && src[pos] == '.' {
 		pos++
 		if ok := checkEnd(StateCRLFDT); ok {
 			return pos, dest[:write], state, EndNone, nil
@@ -76,12 +77,12 @@ StateCRLF:
 		goto done
 	}
 StateCRLFDT:
-	if src[pos] == '\r' {
+	if dotUnstuffing && src[pos] == '\r' {
 		pos++
 		if ok := checkEnd(StateCRLFDTCR); ok {
 			return pos, dest[:write], state, EndNone, nil
 		}
-	} else if src[pos] == '=' {
+	} else if dotUnstuffing && src[pos] == '=' {
 		pos++
 		if ok := checkEnd(StateCRLFEQ); ok {
 			return pos, dest[:write], state, EndNone, nil
@@ -92,8 +93,14 @@ StateCRLFDT:
 	}
 StateCRLFDTCR:
 	if src[pos] == '\n' {
-		state = StateCRLF
-		return pos + 1, dest[:write], state, EndArticle, nil
+		if dotUnstuffing {
+			state = StateCRLF
+			return pos + 1, dest[:write], state, EndArticle, nil
+		} else {
+			pos++
+			checkEnd(StateCRLF)
+			goto StateCRLF
+		}
 	}
 
 done:
@@ -102,7 +109,7 @@ done:
 		switch src[pos] {
 		case '\r':
 			if src[pos+1] == '\n' {
-				if src[pos+2] == '.' {
+				if dotUnstuffing && src[pos+2] == '.' {
 					pos += 3
 					if ok := checkEnd(StateCRLFDT); ok {
 						return pos, dest[:write], state, EndNone, nil
