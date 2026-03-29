@@ -1,9 +1,5 @@
 package rapidyenc
 
-/*
-#include "rapidyenc.h"
-*/
-import "C"
 import (
 	"errors"
 	"fmt"
@@ -11,7 +7,6 @@ import (
 	"hash/crc32"
 	"io"
 	"sync"
-	"unsafe"
 
 	"golang.org/x/sync/errgroup"
 )
@@ -23,6 +18,7 @@ type Encoder struct {
 
 	hash       hash.Hash32
 	lineLength int
+	raw        bool // Encode without yenc headers
 	column     int
 	processed  int64
 
@@ -33,17 +29,22 @@ type Encoder struct {
 	hashErrs errgroup.Group
 }
 
+type EncoderOption func(*Encoder)
+
 // NewEncoder returns a new [Encoder].
 // Writes to the returned writer are yEnc encoded and written to w.
 //
 // It is the caller's responsibility to call Close on the [Encoder] when done.
-func NewEncoder(w io.Writer, m Meta) (e *Encoder, err error) {
-	maybeInitEncode()
+func NewEncoder(w io.Writer, m Meta, opts ...EncoderOption) (e *Encoder, err error) {
+	e = &Encoder{
+		lineLength: 128,
+		hash:       crc32.NewIEEE(),
+		endByte:    make([]byte, 0, 1),
+	}
 
-	e = new(Encoder)
-	e.lineLength = 128
-	e.hash = crc32.NewIEEE()
-	e.endByte = make([]byte, 0, 1)
+	for _, opt := range opts {
+		opt(e)
+	}
 
 	if err := e.Reset(w, m); err != nil {
 		return nil, err
@@ -52,12 +53,28 @@ func NewEncoder(w io.Writer, m Meta) (e *Encoder, err error) {
 	return
 }
 
+// WithLineLength configures the encoded line length
+func WithLineLength(lineLength int) EncoderOption {
+	return func(e *Encoder) {
+		e.lineLength = lineLength
+	}
+}
+
+// WithRaw option encodes without writing yenc headers
+func WithRaw() EncoderOption {
+	return func(e *Encoder) {
+		e.raw = true
+	}
+}
+
 // Reset discards the [Encoder] e's state and makes it equivalent to the
 // result of its original state from [NewEncoder], but writing to w instead.
 // This permits reusing a [Encoder] rather than allocating a new one.
 func (e *Encoder) Reset(w io.Writer, meta Meta) error {
-	if err := meta.validate(); err != nil {
-		return err
+	if !e.raw {
+		if err := meta.validate(); err != nil {
+			return err
+		}
 	}
 
 	e.writeMu.Lock()
@@ -101,7 +118,7 @@ func (e *Encoder) Write(p []byte) (n int, err error) {
 		}
 	}()
 
-	if !e.m.Raw {
+	if !e.raw {
 		if _, err := e.writeHeader(); err != nil {
 			return 0, err
 		}
@@ -124,25 +141,18 @@ func (e *Encoder) Write(p []byte) (n int, err error) {
 
 		buf := e.buf
 
-		colTmp := C.int(e.column)
-		length := C.rapidyenc_encode_ex(
-			C.int(e.lineLength),
-			(*C.int)(unsafe.Pointer(&colTmp)),
-			unsafe.Pointer(&p[0]),
-			unsafe.Pointer(&buf[0]),
-			C.size_t(len(p)),
-			C.int(0),
-		)
-		e.column = int(colTmp)
+		encoded := encodeIncremental(e.lineLength, &e.column, p, buf, false)
+
+		length := len(encoded)
 
 		if length > 0 {
 			// If the last character is '\t' or ' ' then if this is the last write it will need escaping.
 			// Therefore, save the byte for the next call to Write or Close.
-			if buf[length-1] == '\t' || buf[length-1] == ' ' {
-				e.endByte = append(e.endByte, buf[length-1])
-				buf = buf[:length-1]
+			if encoded[length-1] == '\t' || encoded[length-1] == ' ' {
+				e.endByte = append(e.endByte, encoded[length-1])
+				buf = encoded[:length-1]
 			} else {
-				buf = buf[:length]
+				buf = encoded[:length]
 			}
 
 			if len(buf) > 0 {
@@ -173,7 +183,7 @@ func (e *Encoder) Close() error {
 		}
 	}
 
-	if !e.m.Raw {
+	if !e.raw {
 		if _, err := fmt.Fprintf(e.w, "\r\n=yend size=%d part=%d pcrc32=%08x\r\n", e.m.PartSize, e.m.PartNumber, e.hash.Sum32()); err != nil {
 			return err
 		}
@@ -187,33 +197,6 @@ func (e *Encoder) Close() error {
 	}
 
 	return nil
-}
-
-var encodeInitOnce sync.Once
-
-func maybeInitEncode() {
-	encodeInitOnce.Do(func() {
-		C.rapidyenc_encode_init()
-	})
-}
-
-// Encode yEnc encodes the src buffer without adding any =y headers
-//
-// Deprecated: use Encoder as an io.WriteCloser which includes yEnc headers
-func Encode(src []byte) ([]byte, error) {
-	if len(src) == 0 {
-		return nil, errors.New("empty source")
-	}
-
-	dst := make([]byte, maxLength(len(src), 128))
-
-	length := C.rapidyenc_encode(
-		unsafe.Pointer(&src[0]),
-		unsafe.Pointer(&dst[0]),
-		C.size_t(len(src)),
-	)
-
-	return dst[:length], nil
 }
 
 func (e *Encoder) writeHeader() (int, error) {

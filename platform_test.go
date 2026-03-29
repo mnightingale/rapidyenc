@@ -1,13 +1,10 @@
 package rapidyenc
 
 import (
-	"github.com/stretchr/testify/assert"
 	"testing"
-)
 
-func TestVersion(t *testing.T) {
-	assert.NotEqual(t, Version(), "0.0.0")
-}
+	"github.com/stretchr/testify/assert"
+)
 
 func TestDecodeKernel(t *testing.T) {
 	assert.NotEqual(t, DecodeKernel(), "unknown")

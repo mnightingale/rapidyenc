@@ -1,10 +1,10 @@
 module github.com/mnightingale/rapidyenc
 
-go 1.24.0
+go 1.26
 
 require (
 	github.com/stretchr/testify v1.11.1
-	golang.org/x/sync v0.18.0
+	golang.org/x/sync v0.20.0
 )
 
 require (

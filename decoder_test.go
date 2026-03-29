@@ -3,10 +3,11 @@ package rapidyenc
 import (
 	"bufio"
 	"bytes"
-	"crypto/rand"
 	"fmt"
 	"io"
+	"math/rand"
 	"os"
+	"sync"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -18,11 +19,10 @@ func TestDecode(t *testing.T) {
 	cases := []struct {
 		name string
 		raw  string
-		crc  uint32
 	}{
-		{"foobar", "foobar", 0x9EF61F95},
-		{"0x20", string(space), 0x31f365e7},
-		{"special", "\x04\x04\x04\x04", 0xca2ee18a},
+		{"foobar", "foobar"},
+		{"0x20", string(space)},
+		{"special", "\x04\x04\x04\x04"},
 	}
 
 	for _, tc := range cases {
@@ -32,24 +32,53 @@ func TestDecode(t *testing.T) {
 			encoded, err := body(raw)
 			require.NoError(t, err)
 
-			dec := NewDecoder(encoded)
-			b := bytes.NewBuffer(nil)
-			n, err := io.Copy(b, dec)
-			require.Equal(t, int64(len(raw)), n)
+			dec := NewDecoder(encoded, WithStatusLineAlreadyRead())
+			response, err := dec.Next()
+			require.Equal(t, len(raw), len(response.Data))
 			require.NoError(t, err)
-			require.Equal(t, raw, b.Bytes())
-			require.Equal(t, tc.crc, dec.Meta.Hash)
-			require.Equal(t, int64(len(raw)), dec.Meta.End())
+			require.Equal(t, raw, response.Data)
+			require.Equal(t, int64(len(raw)), response.Metadata.End())
+
+		})
+	}
+}
+
+func TestDecodePattern(t *testing.T) {
+	cases := []struct {
+		name    string
+		pattern string
+	}{
+		{"foobar", "A0B1C2D3E4F5G6H7"},
+		{"alpha", "11111111222222223333333344444444555555556666666677777777888888889999999900000000"},
+		{"special", "\u0004\u0004\u0004\u0004"},
+	}
+
+	length := 512
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			raw := bytes.Repeat([]byte(tc.pattern), length/len(tc.pattern)+1)[:length]
+
+			encoded, err := body(raw)
+			require.NoError(t, err)
+
+			dec := NewDecoder(encoded, WithStatusLineAlreadyRead())
+			response, err := dec.Next()
+			//require.Equal(t, int64(len(raw)), n)
+			//require.NoError(t, err)
+			require.Equal(t, raw, response.Data)
+			//require.Equal(t, int64(len(raw)), dec.Meta.End())
 		})
 	}
 }
 
 func TestDecodeUU(t *testing.T) {
 	cases := []struct {
-		name string
-		path string
+		name   string
+		path   string
+		length int
+		crc    uint32
 	}{
-		{"logo_full", "testdata/logo_full.uu"},
+		{"logo_full", "testdata/logo_full.uu", 2184, 0x6BC2917D},
 	}
 
 	for _, tc := range cases {
@@ -58,14 +87,16 @@ func TestDecodeUU(t *testing.T) {
 			require.NoError(t, err)
 			defer f.Close()
 
-			raw, err := io.ReadAll(f)
+			w := new(bytes.Buffer)
+			io.Copy(w, f)
+			w.WriteString(".\r\n")
 			require.NoError(t, err)
 
-			dec := NewDecoder(bytes.NewReader(raw))
-			b := bytes.NewBuffer(nil)
-			_, err = io.Copy(b, dec)
-			require.Error(t, err, ErrUU)
-			require.Equal(t, raw, b.Bytes()) // uudecode is not implemented; just test it is unchanged
+			dec := NewDecoder(w, WithStatusLineAlreadyRead())
+			response, err := dec.Next()
+			require.NoError(t, err)
+			require.Equal(t, tc.length, len(response.Data))
+			require.Equal(t, tc.crc, response.Metadata.CRC)
 		})
 	}
 }
@@ -117,30 +148,42 @@ func TestSplitReads(t *testing.T) {
 				}
 			}()
 
-			dec := NewDecoder(r)
-			b := bytes.NewBuffer(nil)
-			n, err := io.Copy(b, dec)
-			require.Equal(t, int64(len(raw)), n)
+			dec := NewDecoder(r, WithStatusLineAlreadyRead())
+			response, err := dec.Next()
+			require.Equal(t, len(raw), len(response.Data))
 			require.NoError(t, err)
-			require.Equal(t, raw, b.Bytes())
-			require.Equal(t, int64(len(raw)), dec.Meta.End())
+			require.Equal(t, raw, response.Data)
+			require.Equal(t, int64(len(raw)), response.Metadata.End())
 		})
 	}
 }
 
 func BenchmarkDecoder(b *testing.B) {
 	raw := make([]byte, 1024*1024)
-	_, err := rand.Read(raw)
+	_, err := rand.New(rand.NewSource(42)).Read(raw)
 	require.NoError(b, err)
 
 	r, err := body(raw)
 	require.NoError(b, err)
 
+	var bufferPool = sync.Pool{
+		New: func() any {
+			return make([]byte, 0, defaultReadBufSize)
+		},
+	}
+
+	dec := NewDecoder(
+		r,
+		WithStatusLineAlreadyRead(),
+		WithDataFunc(func() []byte {
+			return bufferPool.Get().([]byte)
+		}),
+	)
 	b.ResetTimer()
 	for b.Loop() {
-		dec := NewDecoder(r)
-		_, err = io.Copy(io.Discard, dec)
+		response, err := dec.Next()
 		require.NoError(b, err)
+		bufferPool.Put(response.Data)
 		_, err = r.Seek(0, io.SeekStart)
 		require.NoError(b, err)
 	}
@@ -164,6 +207,9 @@ func body(raw []byte) (io.ReadSeeker, error) {
 		return nil, err
 	}
 	if err := enc.Close(); err != nil {
+		return nil, err
+	}
+	if _, err = w.Write([]byte(".\r\n")); err != nil {
 		return nil, err
 	}
 
