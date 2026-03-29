@@ -2,6 +2,8 @@
 
 **rapidyenc** is a high-performance Go library for decoding [yEnc](https://en.wikipedia.org/wiki/YEnc). It provides fast, memory-efficient decoding with robust error handling, supporting multiple platforms and architectures.
 
+The decoder expects an NNTP stream of data, it will perform dot unstuffing and search for the end of responses ".\r\n" this behaviour is not currently configurable. 
+
 The module exposes the highly efficient encoding and decoding implementations provided by the C compatible library [animetosho/rapidyenc](https://github.com/animetosho/rapidyenc) taking advantage CPU features.
 
 ## Features
