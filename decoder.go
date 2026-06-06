@@ -71,7 +71,7 @@ func (d *Decoder) Next() (*Response, error) {
 			return nil, io.ErrUnexpectedEOF
 		}
 		if !errors.Is(err, io.EOF) {
-			return nil, err
+			return response, err
 		}
 	}
 
