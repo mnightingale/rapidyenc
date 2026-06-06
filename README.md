@@ -2,7 +2,7 @@
 
 **rapidyenc** is a high-performance Go library for decoding [yEnc](https://en.wikipedia.org/wiki/YEnc). It provides fast, memory-efficient decoding with robust error handling, supporting multiple platforms and architectures.
 
-The decoder expects an NNTP stream of data, it will perform dot unstuffing and search for the end of responses ".\r\n" this behaviour is not currently configurable. 
+The decoder expects an NNTP stream of data, it will perform dot unstuffing and search for the end of responses ".\r\n" this behaviour is not currently configurable.
 
 The module exposes the highly efficient encoding and decoding implementations provided by the C compatible library [animetosho/rapidyenc](https://github.com/animetosho/rapidyenc) taking advantage CPU features.
 
@@ -24,9 +24,7 @@ A port of the AVX2 implementations are available, unsupported platforms will use
 
 Hopefully [simd/archsimd](https://pkg.go.dev/simd/archsimd) will add arm64/neon support in the future and if promoted from an experiment I expect CGO usage/support will be removed entirely.
 
-## Usage Examples
-
-### Encoding
+## Encoding
 
 ```go
 // An io.Reader of raw data, here random data, but could be a file, bufio.Reader, etc.
@@ -47,25 +45,68 @@ meta := Meta{
 encoded := bytes.NewBuffer(nil)
 
 // Pass input through the Encoder
-enc, err := NewEncoder(encoded, meta)
+enc, err := rapidyenc.NewEncoder(encoded, meta)
 _, err = io.Copy(enc, input)
 
 // Must close to write the =yend footer
 err = enc.Close()
 ```
 
-### Decoding
+## Decoding
 
 ```go
-// An io.Reader of encoded data
-input := bytes.NewReader(raw)
-output := bytes.NewBuffer(nil)
+// An io.Reader of yEnc encoded data
+encoded := bytes.NewReader(raw)
 
 // Will read from input until io.EOF or ".\r\n"
-dec := NewDecoder(input)
-meta, err := dec.Next(output) // Writes decoded data to output
+dec := rapidyenc.NewDecoder(encoded)
+response, err := dec.Next()
+// if err == nil then response.Data contains the decoded response and response.Metadata yEnc headers, crc, etc.
+// response is also returned even when there is an err but response.Data might be nil
+```
 
-// if err == nil then meta contains yEnc headers
+### Advanced usage
+
+#### WithDataFunc
+
+The above decoding example is suitable for one-off usage however for repeated use it is best to reuse a Decoder instance and output buffers to reduce allocations and garbage collector pressure.
+
+For optimal usage keep a Decoder instance per reader long term and provide it a pool of output buffers via sync.Pool or similar.
+
+```go
+bufferPool := sync.Pool{
+    New: func() any {
+        return make([]byte, 0, 1024*1024) // 1 MiB, choose a size suitable to contain the expected encoded size
+    },
+}
+
+dec := rapidyenc.NewDecoder(encoded, rapidyenc.WithDataFunc(func() []byte {
+    return bufferPool.Get().([]byte)
+}))
+response, err := dec.Next()
+// Determine what to do based on response and err
+if response != nil && response.Data != nil {
+    // Use response.Data, write it to file, etc.
+    // When finished put it back in the pool.
+    bufferPool.Put(response.Data)
+}
+```
+
+#### WithStatusLineAlreadyRead
+
+WithStatusLineAlreadyRead tells the decoder that the NNTP status line has already been consumed from the reader, so it's going to assume that what remains in a multiline response.
+
+```go
+rapidyenc.NewDecoder(encoded, rapidyenc.WithStatusLineAlreadyRead())
+```
+
+#### WithBufferSize
+
+WithBufferSize controls the Decoder internal buffer (default 32 KiB), the input reader is read into this buffer and decoded into Response.Data  
+Larger sizes may be detrimental to performance especially if using pipelining because the response buffer must have at least enough remaining capacity to store the length of the buffer.
+
+```go
+rapidyenc.NewDecoder(encoded, rapidyenc.WithBufferSize(64*1024))
 ```
 
 ## Building from Source
