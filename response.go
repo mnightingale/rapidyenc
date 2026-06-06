@@ -285,28 +285,34 @@ func (r *Response) computeExpectedSize(inputLen int) int {
 	return expected
 }
 
-// ensureData ensures r.data has enough capacity for inputLen additional decoded bytes.
+// ensureData ensures r.Data has enough capacity for inputLen additional decoded bytes.
 // On first call, sizes the buffer based on yEnc header metadata.
 func (r *Response) ensureData(inputLen int) {
 	if r.Data == nil {
 		expected := r.computeExpectedSize(inputLen)
 		if r.dataFunc != nil {
-			buf := r.dataFunc()
-			if cap(buf) < expected {
-				buf = make([]byte, 0, expected)
-			}
-			r.Data = buf[:0]
-			return
-		} else {
-			r.Data = make([]byte, 0, expected)
+			r.Data = r.dataFunc()[:0]
+			r.grow(expected)
 			return
 		}
+
+		r.Data = make([]byte, 0, expected)
+		return
 	}
 
-	if needed := len(r.Data) + inputLen; cap(r.Data) < needed {
-		newData := make([]byte, len(r.Data), needed)
-		copy(newData, r.Data)
-		r.Data = newData
+	r.grow(len(r.Data) + inputLen)
+}
+
+// grow extends r.Data to at least n capacity.
+func (r *Response) grow(n int) {
+	if cap(r.Data) < n {
+		if n < 2*cap(r.Data) {
+			// Grow to 2x current capacity
+			n = 2 * cap(r.Data)
+		}
+		newData := append([]byte(nil), make([]byte, n)...)
+		i := copy(newData, r.Data)
+		r.Data = newData[:i]
 	}
 }
 
