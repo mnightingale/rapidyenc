@@ -6,6 +6,7 @@ import (
 	"encoding/binary"
 	"math/bits"
 	"simd/archsimd"
+	"unsafe"
 )
 
 // Port of the aarch64 paths in encoder_neon.cc, using forward positions rather
@@ -106,7 +107,7 @@ func encSpecialChars(cmpEq, data archsimd.Uint8x16) archsimd.Uint8x16 {
 }
 
 // encExpand applies one shuffle-LUT entry, inserting '=' before escaped bytes.
-func encExpand(data archsimd.Uint8x16, m uint64) archsimd.Uint8x16 {
+func encExpand(data archsimd.Uint8x16, m uint8) archsimd.Uint8x16 {
 	return data.LookupOrZero(archsimd.LoadUint8x16Array(&encShufLUT[m])).
 		Or(archsimd.LoadUint8x16Array(&encShufEqLUT[m]))
 }
@@ -126,15 +127,33 @@ func encCounts(cmpMerge archsimd.Uint8x16, base uint32) uint32 {
 	return packed.OnesCount().ReshapeToUint32s().GetElem(0) + base
 }
 
+// encLoad and encStore address src/dest through raw pointers; the slice forms
+// re-check the bound on every vector access in the hot loop. encodeNEON checks
+// the destination is big enough once, on entry.
+func encLoad(base unsafe.Pointer, off int) archsimd.Uint8x16 {
+	return archsimd.LoadUint8x16Array((*[16]uint8)(unsafe.Add(base, off)))
+}
+
+func encStore(v archsimd.Uint8x16, base unsafe.Pointer, off int) {
+	v.StoreArray((*[16]uint8)(unsafe.Add(base, off)))
+}
+
 func encodeNEON(lineSize int, colOffset *int, src []byte, dest []byte) (int, int) {
 	length := len(src)
 	if length <= encInputOffset || lineSize < encVecSize*4 {
 		return 0, 0
 	}
+	// the loop writes through raw pointers, so check the one invariant that
+	// makes that safe up front rather than on every vector store
+	if len(dest) < maxLength(length, lineSize) {
+		panic("rapidyenc: encode destination too small")
+	}
 
 	p := 0
 	pos := 0
 	end := length - encInputOffset
+	srcP := unsafe.Pointer(&src[0])
+	destP := unsafe.Pointer(&dest[0])
 	lineSizeOffset := -lineSize + 32
 	col := *colOffset - lineSize + 1
 
@@ -153,7 +172,7 @@ func encodeNEON(lineSize int, colOffset *int, src []byte, dest []byte) (int, int
 	}
 	if col >= 0 {
 		if col == 0 {
-			pos, p, col = encodeEOLHandlePre(src, pos, dest, p, lineSizeOffset)
+			pos, p, col = encodeEOLHandlePre(srcP, pos, destP, p, lineSizeOffset)
 		} else {
 			c := src[pos]
 			pos++
@@ -172,8 +191,8 @@ func encodeNEON(lineSize int, colOffset *int, src []byte, dest []byte) (int, int
 	}
 
 	for pos < end {
-		dataA := archsimd.LoadUint8x16(src[pos:])
-		dataB := archsimd.LoadUint8x16(src[pos+encVecSize:])
+		dataA := encLoad(srcP, pos)
+		dataB := encLoad(srcP, pos+encVecSize)
 		pos += encVecSize * 2
 
 		// search for special chars
@@ -198,10 +217,10 @@ func encodeNEON(lineSize int, colOffset *int, src []byte, dest []byte) (int, int
 			m3 := (mask >> 32) & 0xff
 			m4 := (mask >> 48) & 0xff
 
-			data1A := encExpand(dataA, m1)
-			data2A := encExpand(dataA.ConcatShiftBytesRight(dataA, 8), m2)
-			data1B := encExpand(dataB, m3)
-			data2B := encExpand(dataB.ConcatShiftBytesRight(dataB, 8), m4)
+			data1A := encExpand(dataA, uint8(m1))
+			data2A := encExpand(dataA.ConcatShiftBytesRight(dataA, 8), uint8(m2))
+			data1B := encExpand(dataB, uint8(m3))
+			data2B := encExpand(dataB.ConcatShiftBytesRight(dataB, 8), uint8(m4))
 
 			counts := encCounts(cmpMerge, 0x08080808)
 			shuf1Len := int(counts & 0xff)
@@ -210,13 +229,13 @@ func encodeNEON(lineSize int, colOffset *int, src []byte, dest []byte) (int, int
 			shuf4Len := int((counts >> 24) & 0xff)
 			shufTotalLen := int((counts * 0x1010101) >> 24)
 
-			data1A.Store(dest[p:])
+			encStore(data1A, destP, p)
 			p += shuf1Len
-			data2A.Store(dest[p:])
+			encStore(data2A, destP, p)
 			p += shuf2Len
-			data1B.Store(dest[p:])
+			encStore(data1B, destP, p)
 			p += shuf3Len
-			data2B.Store(dest[p:])
+			encStore(data2B, destP, p)
 			p += shuf4Len
 			col += shufTotalLen
 
@@ -255,11 +274,11 @@ func encodeNEON(lineSize int, colOffset *int, src []byte, dest []byte) (int, int
 			outDataA = outDataA.IfElse(blendA, dataAShifted)
 			outDataB = outDataB.IfElse(blendB, dataBShifted)
 
-			outDataA.Store(dest[p:])
-			outDataB.Store(dest[p+encVecSize:])
+			encStore(outDataA, destP, p)
+			encStore(outDataB, destP, p+encVecSize)
 			p += encVecSize * 2
 			// the byte pushed out of dataB by the shift
-			dest[p] = dataB.GetElem(15)
+			*(*byte)(unsafe.Add(destP, p)) = dataB.GetElem(15)
 			escaped := 0
 			if mask != 0 {
 				escaped = 1
@@ -284,7 +303,7 @@ func encodeNEON(lineSize int, colOffset *int, src []byte, dest []byte) (int, int
 			pos -= col
 		}
 
-		pos, p, col = encodeEOLHandlePre(src, pos, dest, p, lineSizeOffset)
+		pos, p, col = encodeEOLHandlePre(srcP, pos, destP, p, lineSizeOffset)
 	}
 
 	*colOffset = col + lineSize - 1
@@ -293,9 +312,9 @@ func encodeNEON(lineSize int, colOffset *int, src []byte, dest []byte) (int, int
 
 // encodeEOLHandlePre writes the last character of the line, the CRLF, and the
 // first 31 characters of the next line
-func encodeEOLHandlePre(src []byte, pos int, dest []byte, p int, lineSizeOffset int) (int, int, int) {
-	oDataA := archsimd.LoadUint8x16(src[pos:])
-	oDataB := archsimd.LoadUint8x16(src[pos+encVecSize:])
+func encodeEOLHandlePre(srcP unsafe.Pointer, pos int, destP unsafe.Pointer, p int, lineSizeOffset int) (int, int, int) {
+	oDataA := encLoad(srcP, pos)
+	oDataB := encLoad(srcP, pos+encVecSize)
 
 	// the first two lanes also escape space, tab and a leading dot
 	idx := oDataA.BitsToInt8().Average(encEolIndexBias).ToBits()
@@ -316,12 +335,12 @@ func encodeEOLHandlePre(src []byte, pos int, dest []byte, p int, lineSizeOffset 
 	// write out first char + newline
 	firstChar := uint32(dataA.GetElem(0))
 	if mask&1 != 0 {
-		binary.LittleEndian.PutUint32(dest[p:], (firstChar<<8)|0x0a0d003d)
+		*(*uint32)(unsafe.Add(destP, p)) = (firstChar << 8) | 0x0a0d003d
 		p += 4
 		mask ^= 1
 		cmpMerge = cmpMerge.AndNot(encClearFirstBit)
 	} else {
-		binary.LittleEndian.PutUint32(dest[p:], firstChar|0x0a0d00)
+		*(*uint32)(unsafe.Add(destP, p)) = firstChar | 0x0a0d00
 		p += 3
 	}
 
@@ -333,10 +352,10 @@ func encodeEOLHandlePre(src []byte, pos int, dest []byte, p int, lineSizeOffset 
 		m3 := (mask >> 32) & 0xff
 		m4 := (mask >> 48) & 0xff
 
-		data1A := encExpand(dataA, m1)
-		data2A := encExpand(dataA.ConcatShiftBytesRight(dataA, 8), m2)
-		data1B := encExpand(dataB, m3)
-		data2B := encExpand(dataB.ConcatShiftBytesRight(dataB, 8), m4)
+		data1A := encExpand(dataA, uint8(m1))
+		data2A := encExpand(dataA.ConcatShiftBytesRight(dataA, 8), uint8(m2))
+		data1B := encExpand(dataB, uint8(m3))
+		data2B := encExpand(dataB.ConcatShiftBytesRight(dataB, 8), uint8(m4))
 
 		// shift out processed byte (last char of line)
 		data1A = data1A.ConcatShiftBytesRight(data1A, 1)
@@ -348,13 +367,13 @@ func encodeEOLHandlePre(src []byte, pos int, dest []byte, p int, lineSizeOffset 
 		shuf4Len := int((counts >> 24) & 0xff)
 		shufTotalLen := int((counts * 0x1010101) >> 24)
 
-		data1A.Store(dest[p:])
+		encStore(data1A, destP, p)
 		p += shuf1Len
-		data2A.Store(dest[p:])
+		encStore(data2A, destP, p)
 		p += shuf2Len
-		data1B.Store(dest[p:])
+		encStore(data1B, destP, p)
 		p += shuf3Len
-		data2B.Store(dest[p:])
+		encStore(data2B, destP, p)
 		p += shuf4Len
 		col = shufTotalLen + 1 + lineSizeOffset - 32
 	} else {
@@ -370,8 +389,8 @@ func encodeEOLHandlePre(src []byte, pos int, dest []byte, p int, lineSizeOffset 
 		outDataA := dataAShifted.IfElse(blendA, dataA)
 		outDataB := dataBShifted.IfElse(blendB, dataB)
 
-		outDataA.Store(dest[p:])
-		outDataB.Store(dest[p+encVecSize:])
+		encStore(outDataA, destP, p)
+		encStore(outDataB, destP, p+encVecSize)
 		p += encVecSize*2 - 1
 		escaped := 0
 		if mask != 0 {
