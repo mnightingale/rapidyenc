@@ -27,6 +27,19 @@ func encodeSIMD(
 
 	consumed, written := kernel(lineSize, colOffset, src, dest)
 
+	if consumed >= length {
+		// no tail for encodeGeneric, so apply its trailing whitespace escape here
+		if doEnd && written > 0 {
+			if lc := dest[written-1]; lc == '\t' || lc == ' ' {
+				dest[written-1] = '='
+				dest[written] = lc + 64
+				written++
+				*colOffset = *colOffset + 1
+			}
+		}
+		return dest[:written]
+	}
+
 	// scalar loop to process remaining bytes
 	scalarOut := encodeGeneric(lineSize, colOffset, src[consumed:], dest[written:], doEnd)
 	return dest[:written+len(scalarOut)]
