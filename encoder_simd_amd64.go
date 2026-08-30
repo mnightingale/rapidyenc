@@ -97,7 +97,7 @@ func init() {
 		}
 	}
 
-	encoderSpecialLUT = archsimd.LoadInt8x32(&[32]int8{
+	encoderSpecialLUT = archsimd.LoadInt8x32([]int8{
 		'\n' - 42, -42, ' ' - 42, '=' - 42, -42, '\r' - 42, -42, -42, '\n' - 42, '\t' - 42, '\x00' - 42, '=' - 42, '.' - 42, '\r' - 42, -42, '\x00' - 42,
 		'\n' - 42, -42, ' ' - 42, '=' - 42, -42, '\r' - 42, -42, -42, '\n' - 42, '\t' - 42, '\x00' - 42, '=' - 42, '.' - 42, '\r' - 42, -42, '\x00' - 42,
 	})
@@ -105,7 +105,7 @@ func init() {
 	broadcast106 = archsimd.BroadcastInt8x32(42 + 64)
 
 	// first byte of a line gets saturated offset to also catch tab/space/dot
-	firstCharAdj = archsimd.LoadInt8x32(&[32]int8{88, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0})
+	firstCharAdj = archsimd.LoadInt8x32([]int8{88, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0})
 }
 
 // encodeSIMDAVX2 performs the AVX2 SIMD encoding kernel.
@@ -212,8 +212,8 @@ func encodeSIMDAVX2(lineSize int, colOffset *int, src []byte, dest []byte) (int,
 
 	for pos+chunk <= endPos {
 		readPos = pos
-		dataA = archsimd.LoadUint8x32Slice(src[readPos:]).AsInt8x32()
-		dataB = archsimd.LoadUint8x32Slice(src[readPos+vecSize:]).AsInt8x32()
+		dataA = archsimd.LoadUint8x32(src[readPos:]).AsInt8x32()
+		dataB = archsimd.LoadUint8x32(src[readPos+vecSize:]).AsInt8x32()
 		pos += chunk
 
 		// search for special chars
@@ -242,15 +242,15 @@ func encodeSIMDAVX2(lineSize int, colOffset *int, src []byte, dest []byte) (int,
 			dataB = dataB.Add(broadcast106.Merge(broadcast42, cmpB))
 
 			// duplicate halves: data1 = both lanes contain low half, data2 = both contain high half
-			data1A = dataA.Select128FromPair(0, 0, dataA).AsUint8x32()
-			data1B = dataB.Select128FromPair(0, 0, dataB).AsUint8x32()
-			data2A = dataA.Select128FromPair(1, 1, dataA).AsUint8x32()
-			data2B = dataB.Select128FromPair(1, 1, dataB).AsUint8x32()
+			data1A = dataA.ConcatPermute128Scalars(0, 0, dataA).AsUint8x32()
+			data1B = dataB.ConcatPermute128Scalars(0, 0, dataB).AsUint8x32()
+			data2A = dataA.ConcatPermute128Scalars(1, 1, dataA).AsUint8x32()
+			data2B = dataB.ConcatPermute128Scalars(1, 1, dataB).AsUint8x32()
 
-			shuf1A = archsimd.LoadUint8x32(&encoderLUT.shufExpand[m1]).AsInt8x32()
-			shuf2A = archsimd.LoadUint8x32(&encoderLUT.shufExpand[m2>>5]).AsInt8x32()
-			shuf1B = archsimd.LoadUint8x32(&encoderLUT.shufExpand[m3]).AsInt8x32()
-			shuf2B = archsimd.LoadUint8x32(&encoderLUT.shufExpand[m4>>5]).AsInt8x32()
+			shuf1A = archsimd.LoadUint8x32Array(&encoderLUT.shufExpand[m1]).AsInt8x32()
+			shuf2A = archsimd.LoadUint8x32Array(&encoderLUT.shufExpand[m2>>5]).AsInt8x32()
+			shuf1B = archsimd.LoadUint8x32Array(&encoderLUT.shufExpand[m3]).AsInt8x32()
+			shuf2B = archsimd.LoadUint8x32Array(&encoderLUT.shufExpand[m4>>5]).AsInt8x32()
 
 			// sign-bit masks: Less(zero) gives TRUE where byte < 0 (high bit set)
 			signMask1A := shuf1A.Less(zeroI8)
@@ -272,10 +272,10 @@ func encodeSIMDAVX2(lineSize int, colOffset *int, src []byte, dest []byte) (int,
 
 			shuf1Len := bits.OnesCount32(m1) + 16
 			shuf3Len := bits.OnesCount32(m3) + 16
-			data1A.StoreSlice(dest[wp:])
-			data2A.StoreSlice(dest[wp+shuf1Len:])
-			data1B.StoreSlice(dest[wp+outputBytesA:])
-			data2B.StoreSlice(dest[wp+outputBytesA+shuf3Len:])
+			data1A.Store(dest[wp:])
+			data2A.Store(dest[wp+shuf1Len:])
+			data1B.Store(dest[wp+outputBytesA:])
+			data2B.Store(dest[wp+outputBytesA+shuf3Len:])
 			outputBytes := vecSize + outputBytesA + maskBitsB
 			wp += outputBytes
 			col += outputBytes
@@ -316,21 +316,21 @@ func encodeSIMDAVX2(lineSize int, colOffset *int, src []byte, dest []byte) (int,
 		bitIndexA = bits.LeadingZeros32(maskA)
 		bitIndexB = bits.LeadingZeros32(maskB)
 
-		mergeMaskA := archsimd.LoadInt8x32(&encoderLUT.expandMergemix[bitIndexA*2])
-		mergeMaskB := archsimd.LoadInt8x32(&encoderLUT.expandMergemix[bitIndexB*2])
+		mergeMaskA := archsimd.LoadInt8x32Array(&encoderLUT.expandMergemix[bitIndexA*2])
+		mergeMaskB := archsimd.LoadInt8x32Array(&encoderLUT.expandMergemix[bitIndexB*2])
 
 		// load shifted data (data at position -1, for insertion of '=' before the escaped byte)
-		dataAShifted := archsimd.LoadUint8x32Slice(src[readPos-1:]).AsInt8x32()
-		dataBShifted := archsimd.LoadUint8x32Slice(src[readPos+vecSize-1:]).AsInt8x32()
+		dataAShifted := archsimd.LoadUint8x32(src[readPos-1:]).AsInt8x32()
+		dataBShifted := archsimd.LoadUint8x32(src[readPos+vecSize-1:]).AsInt8x32()
 
 		// clear space for '=' char: dataA = dataA & ~cmpA
 		dataA = dataA.AndNot(cmpA.ToInt8x32())
 		// blend shifted and original data based on merge mask
 		dataA = dataA.Merge(dataAShifted, mergeMaskA.ToMask())
 		// add offset (42, or '=' + 64 at escape position)
-		addA := archsimd.LoadInt8x32(&encoderLUT.expandMergemix[bitIndexA*2+1])
+		addA := archsimd.LoadInt8x32Array(&encoderLUT.expandMergemix[bitIndexA*2+1])
 		dataA = dataA.Add(addA)
-		dataA.AsUint8x32().StoreSlice(dest[wp:])
+		dataA.AsUint8x32().Store(dest[wp:])
 
 		// handle the extra byte that spills past the 32-byte store
 		dest[wp+vecSize] = src[pos-1-vecSize] + 42 + byte(64)&byte(maskA>>(vecSize-1-6))
@@ -339,8 +339,8 @@ func encodeSIMDAVX2(lineSize int, colOffset *int, src []byte, dest []byte) (int,
 		// same for dataB
 		dataB = dataB.AndNot(cmpB.ToInt8x32())
 		dataB = dataB.Merge(dataBShifted, mergeMaskB.ToMask())
-		dataB = dataB.Add(archsimd.LoadInt8x32(&encoderLUT.expandMergemix[bitIndexB*2+1]))
-		dataB.AsUint8x32().StoreSlice(dest[wp:])
+		dataB = dataB.Add(archsimd.LoadInt8x32Array(&encoderLUT.expandMergemix[bitIndexB*2+1]))
+		dataB.AsUint8x32().Store(dest[wp:])
 
 		dest[wp+vecSize] = src[pos-1] + 42 + byte(64)&byte(maskB>>(vecSize-1-6))
 		wp += maskBitsB
@@ -410,8 +410,8 @@ func encodeEOLHandle(
 	}
 
 	// load next vectors for the new line (data starts at pos+1, after the EOL char)
-	dataA := archsimd.LoadUint8x32Slice(src[pos+1:]).AsInt8x32()
-	dataB := archsimd.LoadUint8x32Slice(src[pos+1+vecSize:]).AsInt8x32()
+	dataA := archsimd.LoadUint8x32(src[pos+1:]).AsInt8x32()
+	dataB := archsimd.LoadUint8x32(src[pos+1+vecSize:]).AsInt8x32()
 	pos += chunk + 1
 
 	// search for special chars (with first-char adjustment)
