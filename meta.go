@@ -24,6 +24,7 @@ type ResponseMeta struct {
 	Message       string
 	StatusCode    int
 	CRC           uint32
+	BadData       bool // uu decoding hit an invalid line length; some data was lost
 }
 
 // Begin is the "=ypart begin" value calculated from the Offset

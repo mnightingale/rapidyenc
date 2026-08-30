@@ -22,7 +22,6 @@ type Response struct {
 	hasEnd       bool
 	hasCrc       bool
 	hasEmptyLine bool // for article requests has the empty line separating headers and body been seen
-	hasBadData   bool // invalid line lengths for uu decoding; some data lost
 }
 
 const nntpHelp = 100
@@ -434,7 +433,7 @@ func (r *Response) decodeUU(line []byte) error {
 			effLen = decodeUUCharWorkaround(line[0])
 			if effLen > len(line)-1 {
 				// Bad line
-				r.hasBadData = true
+				r.Metadata.BadData = true
 				return nil
 			}
 		}
@@ -479,6 +478,11 @@ func (r *Response) decodeUU(line []byte) error {
 				}
 				decoded = append(decoded, c2<<6|c3)
 			}
+		}
+
+		if effLen > 0 {
+			// the line ran out before the declared length was decoded
+			r.Metadata.BadData = true
 		}
 
 		if len(decoded) > 0 {
