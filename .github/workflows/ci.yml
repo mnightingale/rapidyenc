@@ -12,13 +12,16 @@ on:
 
 jobs:
   test:
-    name: Test (${{ matrix.name }})
-    runs-on: ubuntu-latest
+    name: Test (${{ matrix.os }} - ${{ matrix.config.name }})
+    runs-on: ${{ matrix.os }}
 
     strategy:
       fail-fast: false
       matrix:
-        include:
+        os:
+          - ubuntu-latest
+          - ubuntu-24.04-arm
+        config:
           - name: cgo
             cgo_enabled: 1
             goexperiment: ""
@@ -34,7 +37,7 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Set up Go
         uses: actions/setup-go@v6
@@ -43,11 +46,11 @@ jobs:
 
       - name: Run tests
         env:
-          CGO_ENABLED: ${{ matrix.cgo_enabled }}
-          GOEXPERIMENT: ${{ matrix.goexperiment }}
+          CGO_ENABLED: ${{ matrix.config.cgo_enabled }}
+          GOEXPERIMENT: ${{ matrix.config.goexperiment }}
         run: |
           go run gotest.tools/gotestsum@latest \
-            --junitfile unit-tests-${{ matrix.name }}.xml \
+            --junitfile unit-tests-${{ matrix.os }}-${{ matrix.config.name }}.xml \
             --format pkgname \
             -- ./...
 
