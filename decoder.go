@@ -53,19 +53,12 @@ var (
 	ErrCrcMismatch    = errors.New("crc32 mismatch")
 )
 
-type streamFeeder interface {
-	feed(in []byte) (consumed int, done bool, err error)
-}
-
 // Next reads from r until a complete response is decoded.
 // If r is a net.Conn, the caller is responsible for settings deadlines.
 func (d *Decoder) Next() (*Response, error) {
-	response := &Response{
-		hasStatusLine: !d.statusLineConsumed,
-		dataFunc:      d.dataFunc,
-	}
+	response := &Response{}
 
-	if err := d.rb.feedUntilDone(d.r, response); err != nil {
+	if err := d.rb.feedUntilDone(d, d.r, response); err != nil {
 		if !response.eof && errors.Is(err, io.EOF) {
 			// r return EOF but end of NNTP response was not reached
 			return nil, io.ErrUnexpectedEOF
