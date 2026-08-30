@@ -12,19 +12,17 @@ import (
 )
 
 type Response struct {
-	Metadata      ResponseMeta
-	Data          []byte
-	hasStatusLine bool
-	state         State
-	eof           bool
-	body          bool
-	hasPart       bool
-	hasBegin      bool
-	hasEnd        bool
-	hasCrc        bool
-	hasEmptyLine  bool // for article requests has the empty line separating headers and body been seen
-	hasBadData    bool // invalid line lengths for uu decoding; some data lost
-	dataFunc      func() []byte
+	Metadata     ResponseMeta
+	Data         []byte
+	state        State
+	eof          bool
+	body         bool
+	hasPart      bool
+	hasBegin     bool
+	hasEnd       bool
+	hasCrc       bool
+	hasEmptyLine bool // for article requests has the empty line separating headers and body been seen
+	hasBadData   bool // invalid line lengths for uu decoding; some data lost
 }
 
 const nntpBody = 222
@@ -33,8 +31,8 @@ const nntpHead = 221
 const nntpCapabilities = 101
 
 // feed consumes raw NNTP protocol bytes from buf, writing any decoded payload bytes to r.Data.
-func (r *Response) feed(buf []byte) (consumed int, done bool, err error) {
-	n, err := r.decode(buf)
+func (r *Response) feed(decoder *Decoder, buf []byte) (consumed int, done bool, err error) {
+	n, err := r.decode(decoder, buf)
 	r.Metadata.BytesConsumed += int64(n)
 
 	if err != nil {
@@ -68,9 +66,9 @@ func (r *Response) metaError() error {
 	return nil
 }
 
-func (r *Response) decode(buf []byte) (read int, err error) {
+func (r *Response) decode(decoder *Decoder, buf []byte) (read int, err error) {
 	if r.body && r.Metadata.Format == FormatYenc {
-		n, err := r.decodeYenc(buf)
+		n, err := r.decodeYenc(decoder, buf)
 		if err != nil {
 			return int(n), err
 		}
@@ -97,7 +95,7 @@ func (r *Response) decode(buf []byte) (read int, err error) {
 			}
 
 			if r.Metadata.Format == FormatUnknown {
-				if r.hasStatusLine && r.Metadata.StatusCode == 0 && len(line) >= 3 {
+				if !decoder.statusLineConsumed && r.Metadata.StatusCode == 0 && len(line) >= 3 {
 					r.Metadata.Message = string(line)
 					r.Metadata.StatusCode, err = strconv.Atoi(string(line[:3]))
 					if err != nil || !isMultiline(r.Metadata.StatusCode) {
@@ -106,7 +104,7 @@ func (r *Response) decode(buf []byte) (read int, err error) {
 					}
 					continue
 				}
-				r.detectFormat(line)
+				r.detectFormat(decoder, line)
 			}
 
 			switch r.Metadata.Format {
@@ -115,7 +113,7 @@ func (r *Response) decode(buf []byte) (read int, err error) {
 			case FormatYenc:
 				r.processYencHeader(line)
 				if r.body {
-					n, err := r.decodeYenc(buf)
+					n, err := r.decodeYenc(decoder, buf)
 					read += int(n)
 					buf = buf[n:]
 					if err != nil {
@@ -139,8 +137,8 @@ func (r *Response) decode(buf []byte) (read int, err error) {
 	return read, nil
 }
 
-func (r *Response) detectFormat(line []byte) {
-	if r.hasStatusLine && r.Metadata.StatusCode != nntpBody && r.Metadata.StatusCode != nntpArtiicle {
+func (r *Response) detectFormat(decoder *Decoder, line []byte) {
+	if !decoder.statusLineConsumed && r.Metadata.StatusCode != nntpBody && r.Metadata.StatusCode != nntpArtiicle {
 		return
 	}
 
@@ -198,7 +196,7 @@ func (r *Response) detectFormat(line []byte) {
 	}
 
 	// For Article responses only consider after the headers
-	if r.hasStatusLine && !(r.Metadata.StatusCode == nntpBody || (r.Metadata.StatusCode == nntpArtiicle && r.hasEmptyLine)) {
+	if !decoder.statusLineConsumed && !(r.Metadata.StatusCode == nntpBody || (r.Metadata.StatusCode == nntpArtiicle && r.hasEmptyLine)) {
 		return
 	}
 
@@ -287,11 +285,11 @@ func (r *Response) computeExpectedSize() int {
 // take all of buf is fed a shorter slice rather than grown. r.Data is handed to
 // the caller and keeps its capacity for the lifetime of the response, so any
 // growth beyond the decoded length is overhead the caller cannot reclaim.
-func (r *Response) ensureData(buf []byte) []byte {
+func (r *Response) ensureData(decoder *Decoder, buf []byte) []byte {
 	if r.Data == nil {
 		expected := r.computeExpectedSize()
-		if r.dataFunc != nil {
-			r.Data = r.dataFunc()[:0]
+		if decoder.dataFunc != nil {
+			r.Data = decoder.dataFunc()[:0]
 		}
 		if cap(r.Data) < expected {
 			r.Data = make([]byte, 0, expected)
@@ -323,12 +321,12 @@ func (r *Response) grow(n int) {
 	}
 }
 
-func (r *Response) decodeYenc(buf []byte) (consumed int, err error) {
+func (r *Response) decodeYenc(decoder *Decoder, buf []byte) (consumed int, err error) {
 	if len(buf) == 0 {
 		return 0, nil
 	}
 
-	buf = r.ensureData(buf)
+	buf = r.ensureData(decoder, buf)
 
 	offset := len(r.Data)
 	out := r.Data[offset : offset+len(buf)]
