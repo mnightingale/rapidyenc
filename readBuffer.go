@@ -110,6 +110,11 @@ func (rb *readBuffer) feedUntilDone(r io.Reader, feeder streamFeeder) error {
 			return nil
 		}
 
+		// Progress was made, so decode what is left before waiting on the reader.
+		if consumed > 0 && rb.start < rb.end {
+			continue
+		}
+
 		// Need more data.
 		// If decoder couldn't consume anything but we have buffered bytes,
 		// compact them to the start so the next read appends contiguously.
