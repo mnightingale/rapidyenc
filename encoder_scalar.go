@@ -1,4 +1,4 @@
-//go:build !cgo && !(goexperiment.simd && amd64)
+//go:build !cgo && !(goexperiment.simd && (amd64 || arm64))
 
 package rapidyenc
 

@@ -56,7 +56,8 @@ func encodeGeneric(lineSize int, colOffset *int, src []byte, dest []byte, doEnd 
 	}
 
 	for pos < length {
-		sp := 0
+		// -1, not 0: a batch can legitimately start at write == 0
+		sp := -1
 		for pos+8 < length && lineSize-col-1 > 8 {
 			sp = write
 			// C++ unrolls this...
@@ -74,7 +75,7 @@ func encodeGeneric(lineSize int, colOffset *int, src []byte, dest []byte, doEnd 
 			col += write - sp
 		}
 
-		if sp > 0 && col >= lineSize-1 {
+		if sp >= 0 && col >= lineSize-1 {
 			col -= write - sp
 			write = sp
 			pos -= 8
