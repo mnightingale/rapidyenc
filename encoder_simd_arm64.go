@@ -9,9 +9,8 @@ import (
 	"unsafe"
 )
 
-// Port of the aarch64 paths in encoder_neon.cc, using forward positions rather
-// than the reference's negative index. col keeps the reference's bias, where 0
-// means the next byte is the last on the line, and is un-biased on the way out.
+// Port of the aarch64 paths in encoder_neon.cc. col is biased so that 0 means
+// the next byte is the last on the line, and is un-biased on the way out.
 
 const (
 	encVecSize = 16
@@ -77,8 +76,7 @@ func init() {
 		off(' '), off('\n'), off('\r'), off(' '), none, none, none, none,
 		none, none, off('.'), none, none, none, off('='), none,
 	})
-	// the reference uses vhaddq_s8; archsimd only has the rounding halving add,
-	// so bias by one less to get the same result
+	// one less than the reference's vhaddq_s8 bias, as Average rounds
 	encEolIndexBias = archsimd.LoadInt8x16([]int8{
 		41, 47, 65, 65, 65, 65, 65, 65, 65, 65, 65, 65, 65, 65, 65, 65,
 	})
@@ -100,8 +98,7 @@ func encodeIncremental(lineSize int, colOffset *int, src []byte, dest []byte, do
 	return encodeSIMD(lineSize, colOffset, src, dest, doEnd, encodeNEON)
 }
 
-// encSpecialChars marks \0, \n, \r and = in data, which is already offset by
-// 42. Same TBX substitution as the decoder's specialChars.
+// encSpecialChars marks \0, \n, \r and = in data, which is already offset by 42.
 func encSpecialChars(cmpEq, data archsimd.Uint8x16) archsimd.Uint8x16 {
 	return encSpecialLUT.LookupOrZero(data).Or(cmpEq)
 }
@@ -120,16 +117,12 @@ func encMask(cmpA, cmpB archsimd.Uint8x16) (archsimd.Uint8x16, uint64) {
 	return cmpMerge, cmpMerge.ReshapeToUint64s().GetElem(0)
 }
 
-// encCounts returns the four per-group output lengths packed into a uint32;
-// the low half of the 128-bit ADDP holds the same bytes as the reference's VPADD
+// encCounts returns the four per-group output lengths packed into a uint32.
 func encCounts(cmpMerge archsimd.Uint8x16, base uint32) uint32 {
 	packed := addPairs(cmpMerge, cmpMerge)
 	return packed.OnesCount().ReshapeToUint32s().GetElem(0) + base
 }
 
-// encLoad and encStore address src/dest through raw pointers; the slice forms
-// re-check the bound on every vector access in the hot loop. encodeNEON checks
-// the destination is big enough once, on entry.
 func encLoad(base unsafe.Pointer, off int) archsimd.Uint8x16 {
 	return archsimd.LoadUint8x16Array((*[16]uint8)(unsafe.Add(base, off)))
 }
@@ -143,8 +136,6 @@ func encodeNEON(lineSize int, colOffset *int, src []byte, dest []byte) (int, int
 	if length <= encInputOffset || lineSize < encVecSize*4 {
 		return 0, 0
 	}
-	// the loop writes through raw pointers, so check the one invariant that
-	// makes that safe up front rather than on every vector store
 	if len(dest) < maxLength(length, lineSize) {
 		panic("rapidyenc: encode destination too small")
 	}

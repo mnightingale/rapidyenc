@@ -118,8 +118,7 @@ func decodeNEON(dest, src []byte, escFirst uint64, nextMask uint16) (int, int, u
 
 	n := len(src)
 
-	// a \r\n. straddling the end of the consumed region is only visible from
-	// out here; the loop overwrites nextMask again if it bails out early
+	// nextMask for the scalar tail; the loop overwrites it if it bails out early
 	blocks := 0
 	if n >= 64+readAhead {
 		blocks = (n - readAhead) / 64
@@ -401,9 +400,7 @@ func neonVectIsNonzero(v archsimd.Uint8x16) bool {
 	return 0 != v.ReshapeToUint64s().SaturateToUint32().ReshapeToUint64s().GetElem(0)
 }
 
-// specialChars marks \n, \r and = within data. The reference uses TBX with
-// cmpEq as the background, but cmpEq is zero at every in-range index, so a
-// plain lookup OR'd with it is equivalent.
+// specialChars marks \n, \r and = within data.
 func specialChars(cmpEq, data archsimd.Uint8x16) archsimd.Uint8x16 {
 	return specialLut.LookupOrZero(data).Or(cmpEq)
 }
@@ -430,7 +427,7 @@ func eqY16(data archsimd.Uint8x16) archsimd.Uint8x16 {
 	return data.ReshapeToUint16s().Equal(broadcastEQY).ToInt16x8().ToBits().ReshapeToUint8s()
 }
 
-// vbslq_u8 emulates BSL; IfElse can't do it because Mask8x16 is per-lane
+// vbslq_u8 emulates BSL
 func vbslq_u8(mask, a, b archsimd.Uint8x16) archsimd.Uint8x16 {
 	return a.And(mask).Or(b.AndNot(mask))
 }
@@ -446,7 +443,7 @@ func vtstq_u8(a, b archsimd.Uint8x16) archsimd.Mask8x16 {
 	return a.And(b).NotEqual(broadcastZERO)
 }
 
-// addPairs emulates ADDP; ConcatAddPairs has no 8-bit lane version
+// addPairs emulates ADDP
 func addPairs(a, b archsimd.Uint8x16) archsimd.Uint8x16 {
 	return a.ConcatEven(b).Add(a.ConcatOdd(b))
 }
