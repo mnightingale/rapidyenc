@@ -134,6 +134,27 @@ func decodeSIMDAVX2(dest, src []byte, escFirst uint64, nextMask uint16) (int, in
 	}
 
 	n := len(src)
+
+	// a \r\n. straddling the end of the consumed region is only visible from
+	// out here; the loop overwrites nextMask again if it bails out early
+	blocks := 0
+	if n >= 68 {
+		blocks = (n - 4) / 64
+	}
+	if !isRaw {
+		nextMask = 0
+	} else if blocks > 0 {
+		e := 64 * blocks
+		switch {
+		case src[e-2] == '\r' && src[e-1] == '\n' && src[e] == '.':
+			nextMask = 1
+		case src[e-1] == '\r' && src[e] == '\n' && src[e+1] == '.':
+			nextMask = 2
+		default:
+			nextMask = 0
+		}
+	}
+
 	srcP := unsafe.Pointer(&src[0])
 	destP := unsafe.Pointer(&dest[0])
 	for ; consumed+68 <= n; consumed += 64 {
@@ -298,11 +319,11 @@ func decodeSIMDAVX2(dest, src []byte, escFirst uint64, nextMask uint16) (int, in
 			maskEqShift1 := (maskEq << 1) + escFirst
 			if mask&maskEqShift1 != 0 {
 				maskEq = fixEqMask(maskEq, maskEqShift1)
-				mask &= ^escFirst
-				escFirst = maskEq >> 63
+				nextEscFirst := maskEq >> 63
 				// next, eliminate anything following a `=` from the special char mask; this eliminates cases of `=\r` so that they aren't removed
-				maskEq <<= 1
+				maskEq = (maskEq << 1) | escFirst
 				mask &= ^maskEq
+				escFirst = nextEscFirst
 
 				// unescape chars following `=`
 				{
