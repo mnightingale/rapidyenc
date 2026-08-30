@@ -176,8 +176,8 @@ func (r *Response) detectFormat(decoder *Decoder, line []byte) {
 		line = bytes.TrimLeft(line[6:], " ")
 
 		// Extract the next token (permission part)
-		perms, found := bytes.CutPrefix(line, []byte(" "))
-		if !found {
+		perms, _, found := bytes.Cut(line, []byte(" "))
+		if !found || len(perms) == 0 {
 			return
 		}
 
