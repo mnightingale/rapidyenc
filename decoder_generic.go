@@ -138,9 +138,9 @@ done:
 						dest[write] = c - 42 - 64
 						write++
 						if c == '\r' {
+							// step back so the loop's pos++ re-examines the \r
 							pos--
 						}
-						pos++
 					default:
 						pos--
 					}

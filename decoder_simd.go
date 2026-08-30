@@ -54,51 +54,51 @@ func decodeSIMD(
 		case StateCRLF:
 			if dotUnstuffing && src[0] == '.' {
 				nextMask = 1
-				if searchEnd && bytes.Equal(src[1:], []byte("\r\n")) {
+				if searchEnd && bytes.HasPrefix(src[1:], []byte("\r\n")) {
 					state = StateCRLF
-					return 3, dest[:0], state, EndArticle, nil
+					return consumed + 3, dest[:produced], state, EndArticle, nil
 				}
-				if searchEnd && bytes.Equal(src[1:], []byte("=y")) {
+				if searchEnd && bytes.HasPrefix(src[1:], []byte("=y")) {
 					state = StateNone
-					return 3, dest[:0], state, EndControl, nil
+					return consumed + 3, dest[:produced], state, EndControl, nil
 				}
-			} else if searchEnd && bytes.Equal(src, []byte("=y")) {
+			} else if searchEnd && bytes.HasPrefix(src, []byte("=y")) {
 				state = StateNone
-				return 2, dest[:0], state, EndControl, nil
+				return consumed + 2, dest[:produced], state, EndControl, nil
 			}
 		case StateCR:
 			if dotUnstuffing && len(src) >= 2 && src[0] == '\n' && src[1] == '.' {
 				nextMask = 2
-				if searchEnd && bytes.Equal(src[2:], []byte("\r\n")) {
+				if searchEnd && bytes.HasPrefix(src[2:], []byte("\r\n")) {
 					state = StateCRLF
-					return 4, dest[:0], state, EndArticle, nil
+					return consumed + 4, dest[:produced], state, EndArticle, nil
 				}
-				if searchEnd && bytes.Equal(src[2:], []byte("=y")) {
+				if searchEnd && bytes.HasPrefix(src[2:], []byte("=y")) {
 					state = StateNone
-					return 4, dest[:0], state, EndControl, nil
+					return consumed + 4, dest[:produced], state, EndControl, nil
 				}
-			} else if searchEnd && bytes.Equal(src[2:], []byte("\n=y")) {
+			} else if searchEnd && bytes.HasPrefix(src, []byte("\n=y")) {
 				state = StateNone
-				return 3, dest[:0], state, EndControl, nil
+				return consumed + 3, dest[:produced], state, EndControl, nil
 			}
 		case StateCRLFDT:
-			if searchEnd && bytes.Equal(src, []byte("\r\n")) {
+			if searchEnd && bytes.HasPrefix(src, []byte("\r\n")) {
 				state = StateCRLF
-				return 2, dest[:0], state, EndArticle, nil
+				return consumed + 2, dest[:produced], state, EndArticle, nil
 			}
-			if searchEnd && bytes.Equal(src, []byte("=y")) {
+			if searchEnd && bytes.HasPrefix(src, []byte("=y")) {
 				state = StateNone
-				return 2, dest[:0], state, EndControl, nil
+				return consumed + 2, dest[:produced], state, EndControl, nil
 			}
 		case StateCRLFDTCR:
-			if searchEnd && bytes.Equal(src, []byte("\n")) {
+			if searchEnd && bytes.HasPrefix(src, []byte("\n")) {
 				state = StateCRLF
-				return 1, dest[:0], state, EndArticle, nil
+				return consumed + 1, dest[:produced], state, EndArticle, nil
 			}
 		case StateCRLFEQ:
-			if searchEnd && bytes.Equal(src, []byte("y")) {
+			if searchEnd && bytes.HasPrefix(src, []byte("y")) {
 				state = StateNone
-				return 1, dest[:0], state, EndControl, nil
+				return consumed + 1, dest[:produced], state, EndControl, nil
 			}
 		}
 
