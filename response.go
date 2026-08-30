@@ -265,7 +265,7 @@ const (
 	yencMinBufferSize = 1024
 )
 
-func (r *Response) computeExpectedSize(inputLen int) int {
+func (r *Response) computeExpectedSize() int {
 	// Allocate output buffer on first decode call
 	// Use size from headers, capped at yencMaxPartSize for safety
 	base := r.Metadata.PartSize
@@ -273,34 +273,41 @@ func (r *Response) computeExpectedSize(inputLen int) int {
 		base = r.Metadata.FileSize
 	}
 	expected := int(base) + 64 // small margin to see the end of yEnc data
-	// Round up to next multiple of defaultReadBufSize
-	expected = ((expected + defaultReadBufSize - 1) / defaultReadBufSize) * defaultReadBufSize
-	// Add an extra chunk so we should never need to resize
-	expected += defaultReadBufSize
 
 	expected = max(expected, yencMinBufferSize)
 	expected = min(expected, yencMaxPartSize)
-	expected = max(expected, inputLen)
 
 	return expected
 }
 
-// ensureData ensures r.Data has enough capacity for inputLen additional decoded bytes.
-// On first call, sizes the buffer based on yEnc header metadata.
-func (r *Response) ensureData(inputLen int) {
+// ensureData returns the leading portion of buf that can be decoded into r.Data.
+// On first call it sizes the buffer from the yEnc header metadata.
+//
+// Decoding never produces more bytes than it consumes, so a buffer that cannot
+// take all of buf is fed a shorter slice rather than grown. r.Data is handed to
+// the caller and keeps its capacity for the lifetime of the response, so any
+// growth beyond the decoded length is overhead the caller cannot reclaim.
+func (r *Response) ensureData(buf []byte) []byte {
 	if r.Data == nil {
-		expected := r.computeExpectedSize(inputLen)
+		expected := r.computeExpectedSize()
 		if r.dataFunc != nil {
 			r.Data = r.dataFunc()[:0]
 			r.grow(expected)
-			return
+		} else {
+			r.Data = make([]byte, 0, expected)
 		}
-
-		r.Data = make([]byte, 0, expected)
-		return
 	}
 
-	r.grow(len(r.Data) + inputLen)
+	switch space := cap(r.Data) - len(r.Data); {
+	case space >= len(buf):
+		return buf
+	case space > 0:
+		return buf[:space]
+	default:
+		// The article holds more than its headers declared.
+		r.grow(len(r.Data) + len(buf))
+		return buf
+	}
 }
 
 // grow extends r.Data to at least n capacity.
@@ -321,7 +328,7 @@ func (r *Response) decodeYenc(buf []byte) (consumed int, err error) {
 		return 0, nil
 	}
 
-	r.ensureData(len(buf))
+	buf = r.ensureData(buf)
 
 	offset := len(r.Data)
 	out := r.Data[offset : offset+len(buf)]
