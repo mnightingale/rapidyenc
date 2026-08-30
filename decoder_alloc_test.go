@@ -3,6 +3,7 @@ package rapidyenc
 import (
 	"bytes"
 	"io"
+	"sync"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -55,5 +56,31 @@ func TestDecodeNoExcessAllocationMultipleResponses(t *testing.T) {
 			require.Equal(t, wantCap(size), cap(response.Data),
 				"bufSize=%d response=%d was grown or over-allocated", bufSize, i)
 		}
+	}
+}
+
+// A pooled buffer that is already big enough is used as-is; one that is too
+// small is replaced with an exactly sized buffer rather than a doubled one.
+func TestDecodeNoExcessAllocationWithDataFunc(t *testing.T) {
+	for _, poolCap := range []int{0, 512, 5000, 1 << 20} {
+		pool := sync.Pool{New: func() any { return make([]byte, 0, poolCap) }}
+
+		const size = 100_000
+		raw := bytes.Repeat([]byte("abcdefgh"), size/8+1)[:size]
+		encoded, err := body(raw)
+		require.NoError(t, err)
+
+		dec := NewDecoder(encoded, WithStatusLineAlreadyRead(), WithDataFunc(func() []byte {
+			return pool.Get().([]byte)
+		}))
+		response, err := dec.Next()
+		require.NoError(t, err)
+		require.Equal(t, raw, response.Data)
+
+		want := wantCap(size)
+		if poolCap > want {
+			want = poolCap
+		}
+		require.Equal(t, want, cap(response.Data), "poolCap=%d", poolCap)
 	}
 }

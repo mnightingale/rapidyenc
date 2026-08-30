@@ -292,8 +292,8 @@ func (r *Response) ensureData(buf []byte) []byte {
 		expected := r.computeExpectedSize()
 		if r.dataFunc != nil {
 			r.Data = r.dataFunc()[:0]
-			r.grow(expected)
-		} else {
+		}
+		if cap(r.Data) < expected {
 			r.Data = make([]byte, 0, expected)
 		}
 	}
