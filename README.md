@@ -18,11 +18,21 @@ The module exposes the highly efficient encoding and decoding implementations pr
 
 Experimental support using [simd/archsimd](https://pkg.go.dev/simd/archsimd) is available without the need for CGO, allowing safer more portable usage.
 
-A port of the AVX2 implementations are available, unsupported platforms will use a generic and slow scalar implementation.
+Both the encoder and decoder are ported from the reference implementations:
+
+| Platform          | Kernel                          |
+|-------------------|---------------------------------|
+| `amd64` with AVX2 | AVX2                            |
+| `arm64`           | NEON                            |
+| anything else     | generic scalar, and much slower |
+
+Requires Go 1.27, built with:
 
 `CGO_ENABLED=0 GOEXPERIMENT=simd`
 
-Hopefully [simd/archsimd](https://pkg.go.dev/simd/archsimd) will add arm64/neon support in the future and if promoted from an experiment I expect CGO usage/support will be removed entirely.
+`DecodeKernel()` and `EncodeKernel()` report which implementation is in use.
+
+If [simd/archsimd](https://pkg.go.dev/simd/archsimd) is promoted from an experiment I expect CGO usage/support will be removed entirely.
 
 ## Encoding
 
