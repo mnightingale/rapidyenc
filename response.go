@@ -291,6 +291,9 @@ func (r *Response) computeExpectedSize() int {
 	if base <= 0 {
 		base = r.Metadata.FileSize
 	}
+	// Clamp before the margin is added; a header size near MaxInt64 would
+	// overflow, and int(base) would truncate on a 32-bit platform
+	base = min(base, yencMaxPartSize)
 	expected := int(base) + 64 // small margin to see the end of yEnc data
 
 	expected = max(expected, yencMinBufferSize)
@@ -507,8 +510,10 @@ func (r *Response) processYencHeader(line []byte) {
 		r.body = true
 		line = line[len("=ypart"):]
 		var begin int64
-		// Convert from 1-based to 0-based indexing
-		if begin, err = extractInt(line, []byte(" begin=")); err == nil {
+		// Convert from 1-based to 0-based indexing, ignoring a begin below 1
+		// which would put Offset before the start of the file
+		if b, err := extractInt(line, []byte(" begin=")); err == nil && b >= 1 {
+			begin = b
 			r.Metadata.Offset = begin - 1
 		}
 		if end, err := extractInt(line, []byte(" end=")); err == nil && end >= begin {
