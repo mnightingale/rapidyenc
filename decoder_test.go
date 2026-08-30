@@ -7,6 +7,7 @@ import (
 	"io"
 	"math/rand"
 	"os"
+	"strings"
 	"sync"
 	"testing"
 
@@ -270,5 +271,38 @@ func TestExtractCRC(t *testing.T) {
 			require.NoError(t, err)
 			require.Equal(t, tc.expected, i)
 		})
+	}
+}
+
+func TestHelp(t *testing.T) {
+	lines := []string{
+		"100 Help follows.",
+		" ARTICLE [msgid|number]",
+		" BODY [msgid|number]",
+		" HEAD [msgid|number]",
+		" GROUP [newsgroup]",
+		" STAT [msgid|number]",
+		" OVER [range]",
+		" XOVER [range]",
+		" XHDR [header] [range]",
+		" POST",
+		" IHAVE [msgid]",
+		" LIST",
+		" MODE [reader]",
+		" DATE",
+		" XZVER [range]",
+		" XZHDR [header] [range|msgid]",
+		" HELP",
+		" QUIT",
+		".\r\n",
+	}
+
+	encoded := strings.NewReader(strings.Join(lines, "\r\n"))
+
+	dec := NewDecoder(encoded)
+	response, err := dec.Next()
+	require.NoError(t, err)
+	for _, line := range lines[1 : len(lines)-1] {
+		require.Contains(t, response.Metadata.Lines, line)
 	}
 }

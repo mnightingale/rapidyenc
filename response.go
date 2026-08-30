@@ -25,10 +25,15 @@ type Response struct {
 	hasBadData   bool // invalid line lengths for uu decoding; some data lost
 }
 
-const nntpBody = 222
-const nntpArtiicle = 220
-const nntpHead = 221
+const nntpHelp = 100
 const nntpCapabilities = 101
+const nntpList = 215
+const nntpArticle = 220
+const nntpHead = 221
+const nntpBody = 222
+const nntpOver = 224
+const nntpHDR = 225
+const nntpNewsgroups = 231
 
 // feed consumes raw NNTP protocol bytes from buf, writing any decoded payload bytes to r.Data.
 func (r *Response) feed(decoder *Decoder, buf []byte) (consumed int, done bool, err error) {
@@ -45,23 +50,22 @@ func (r *Response) feed(decoder *Decoder, buf []byte) (consumed int, done bool, 
 }
 
 func (r *Response) metaError() error {
-	if !isMultiline(r.Metadata.StatusCode) {
-		return nil
-	}
 	if r.Metadata.Format == FormatUU {
 		return nil
 	}
-	if !r.hasBegin {
-		return fmt.Errorf("[rapidyenc] end of article without finding \"=ybegin\" header: %w", ErrDataMissing)
-	}
-	if !r.hasEnd {
-		return fmt.Errorf("[rapidyenc] end of article without finding \"=yend\" trailer: %w", ErrDataCorruption)
-	}
-	if (!r.hasPart && r.Metadata.FileSize != r.Metadata.BytesProduced) || (r.hasPart && r.Metadata.PartSize != r.Metadata.BytesProduced) {
-		return fmt.Errorf("[rapidyenc] expected size %d but got %d: %w", r.Metadata.PartSize, r.Metadata.BytesProduced, ErrDataCorruption)
-	}
-	if r.hasCrc && r.Metadata.ExpectedCRC != r.Metadata.CRC {
-		return fmt.Errorf("[rapidyenc] expected decoded data to have CRC32 hash %#08x but got %#08x: %w", r.Metadata.ExpectedCRC, r.Metadata.CRC, ErrCrcMismatch)
+	if r.Metadata.Format == FormatYenc {
+		if !r.hasBegin {
+			return fmt.Errorf("[rapidyenc] end of article without finding \"=ybegin\" header: %w", ErrDataMissing)
+		}
+		if !r.hasEnd {
+			return fmt.Errorf("[rapidyenc] end of article without finding \"=yend\" trailer: %w", ErrDataCorruption)
+		}
+		if (!r.hasPart && r.Metadata.FileSize != r.Metadata.BytesProduced) || (r.hasPart && r.Metadata.PartSize != r.Metadata.BytesProduced) {
+			return fmt.Errorf("[rapidyenc] expected size %d but got %d: %w", r.Metadata.PartSize, r.Metadata.BytesProduced, ErrDataCorruption)
+		}
+		if r.hasCrc && r.Metadata.ExpectedCRC != r.Metadata.CRC {
+			return fmt.Errorf("[rapidyenc] expected decoded data to have CRC32 hash %#08x but got %#08x: %w", r.Metadata.ExpectedCRC, r.Metadata.CRC, ErrCrcMismatch)
+		}
 	}
 	return nil
 }
@@ -138,7 +142,7 @@ func (r *Response) decode(decoder *Decoder, buf []byte) (read int, err error) {
 }
 
 func (r *Response) detectFormat(decoder *Decoder, line []byte) {
-	if !decoder.statusLineConsumed && r.Metadata.StatusCode != nntpBody && r.Metadata.StatusCode != nntpArtiicle {
+	if !decoder.statusLineConsumed && r.Metadata.StatusCode != nntpBody && r.Metadata.StatusCode != nntpArticle {
 		return
 	}
 
@@ -196,7 +200,7 @@ func (r *Response) detectFormat(decoder *Decoder, line []byte) {
 	}
 
 	// For Article responses only consider after the headers
-	if !decoder.statusLineConsumed && !(r.Metadata.StatusCode == nntpBody || (r.Metadata.StatusCode == nntpArtiicle && r.hasEmptyLine)) {
+	if !decoder.statusLineConsumed && !(r.Metadata.StatusCode == nntpBody || (r.Metadata.StatusCode == nntpArticle && r.hasEmptyLine)) {
 		return
 	}
 
@@ -255,7 +259,16 @@ func decodeUUChar(c byte) int {
 }
 
 func isMultiline(code int) bool {
-	return code == nntpBody || code == nntpArtiicle || code == nntpHead || code == nntpCapabilities
+	// Does not include 211 because GROUP is 211 single-line but LISTGROUP is 211 multi-line
+	return code == nntpHelp ||
+		code == nntpCapabilities ||
+		code == nntpList ||
+		code == nntpArticle ||
+		code == nntpHead ||
+		code == nntpBody ||
+		code == nntpOver ||
+		code == nntpHDR ||
+		code == nntpNewsgroups
 }
 
 const (
