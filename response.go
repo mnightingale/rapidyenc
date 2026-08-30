@@ -60,7 +60,7 @@ func (r *Response) metaError() error {
 		if !r.hasEnd {
 			return fmt.Errorf("[rapidyenc] end of article without finding \"=yend\" trailer: %w", ErrDataCorruption)
 		}
-		if (!r.hasPart && r.Metadata.FileSize != r.Metadata.BytesProduced) || (r.hasPart && r.Metadata.PartSize != r.Metadata.BytesProduced) {
+		if (!r.hasPart && r.Metadata.FileSize > 0 && r.Metadata.FileSize != r.Metadata.BytesProduced) || (r.hasPart && r.Metadata.PartSize != r.Metadata.BytesProduced) {
 			return fmt.Errorf("[rapidyenc] expected size %d but got %d: %w", r.Metadata.PartSize, r.Metadata.BytesProduced, ErrDataCorruption)
 		}
 		if r.hasCrc && r.Metadata.ExpectedCRC != r.Metadata.CRC {
@@ -141,8 +141,16 @@ func (r *Response) decode(decoder *Decoder, buf []byte) (read int, err error) {
 	return read, nil
 }
 
+func (r *Response) maybeBinaryData() bool {
+	code := r.Metadata.StatusCode
+	return code == nntpBody ||
+		code == nntpArticle ||
+		code == nntpOver || // XZVER may be yEnc encoded
+		code == nntpHead // XZHDR may be yEnc encoded
+}
+
 func (r *Response) detectFormat(decoder *Decoder, line []byte) {
-	if !decoder.statusLineConsumed && r.Metadata.StatusCode != nntpBody && r.Metadata.StatusCode != nntpArticle {
+	if !decoder.statusLineConsumed && !r.maybeBinaryData() {
 		return
 	}
 
