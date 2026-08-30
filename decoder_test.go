@@ -3,6 +3,7 @@ package rapidyenc
 import (
 	"bufio"
 	"bytes"
+	"compress/zlib"
 	"fmt"
 	"io"
 	"math/rand"
@@ -304,5 +305,41 @@ func TestHelp(t *testing.T) {
 	require.NoError(t, err)
 	for _, line := range lines[1 : len(lines)-1] {
 		require.Contains(t, response.Metadata.Lines, line)
+	}
+}
+
+// TestXZVER Astraweb style yenc(deflate(overview))
+func TestXZVERYenc(t *testing.T) {
+	cases := []struct {
+		raw string
+	}{
+		{"hello world"},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.raw, func(t *testing.T) {
+			buf := bytes.NewBuffer(nil)
+			compressor, err := zlib.NewWriterLevel(buf, zlib.BestSpeed)
+			require.NoError(t, err)
+			_, err = compressor.Write([]byte(tc.raw))
+			require.NoError(t, err)
+			err = compressor.Close()
+			require.NoError(t, err)
+
+			encoded := bytes.NewBuffer([]byte("224 Overview follows\r\n=ybegin line=128 size=-1\r\n"))
+			enc, err := NewEncoder(encoded, Meta{}, WithRaw())
+			require.NoError(t, err)
+			_, err = io.Copy(enc, bytes.NewReader(buf.Bytes()))
+			require.NoError(t, err)
+			err = enc.Close()
+			require.NoError(t, err)
+			_, err = fmt.Fprintf(encoded, "\r\n=yend crc32=%08x\r\n.\r\n", enc.hash.Sum32())
+			require.NoError(t, err)
+
+			dec := NewDecoder(bytes.NewReader(encoded.Bytes()))
+			response, err := dec.Next()
+			require.NoError(t, err)
+			require.Equal(t, buf.Bytes(), response.Data)
+		})
 	}
 }
