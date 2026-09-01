@@ -100,7 +100,10 @@ func BenchmarkEncoder(b *testing.B) {
 	_, err := rand.Read(raw)
 	require.NoError(b, err)
 
-	r := bytes.NewReader(raw)
+	// A bytes.Reader would be copied with WriteTo, handing the encoder the
+	// whole payload in one Write. Hide it so io.Copy uses its own buffer, as
+	// it would when streaming from a file or a connection.
+	r := struct{ io.Reader }{bytes.NewReader(raw)}
 
 	meta := Meta{
 		FileName:   "filename",
@@ -113,13 +116,14 @@ func BenchmarkEncoder(b *testing.B) {
 	enc, err := NewEncoder(io.Discard, meta)
 	require.NoError(b, err)
 
+	b.SetBytes(int64(len(raw)))
 	b.ResetTimer()
 	for b.Loop() {
 		_, err = io.Copy(enc, r)
 		require.NoError(b, err)
 		err = enc.Close()
 		require.NoError(b, err)
-		_, err = r.Seek(0, io.SeekStart)
+		_, err = r.Reader.(*bytes.Reader).Seek(0, io.SeekStart)
 		require.NoError(b, err)
 		enc.Reset(io.Discard, meta)
 	}
