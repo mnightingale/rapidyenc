@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"math"
 	"strconv"
 	"unicode"
 )
@@ -278,24 +279,41 @@ func isMultiline(code int) bool {
 }
 
 const (
-	yencMaxPartSize   = 10 * 1024 * 1024 // 10 MiB
-	yencMinBufferSize = 1024
+	yencMaxInitialAlloc = 10 * 1024 * 1024 // 10 MiB
+	yencMinBufferSize   = 1024
+
+	// How far past the current capacity a declared size may be and still be
+	// allocated in one step
+	growJumpLimit = 8
 )
 
+// declaredSize is the payload size the yEnc headers claim, plus a small margin
+// to see the end of the yEnc data, or 0 when the headers do not say or the size
+// is too large for the margin and int(base) not to overflow.
+func (r *Response) declaredSize() int {
+	base := r.Metadata.PartSize
+	if base <= 0 {
+		base = r.Metadata.FileSize
+	}
+	if base <= 0 || base > math.MaxInt-64 {
+		return 0
+	}
+	return int(base) + 64
+}
+
+// computeExpectedSize is the capacity r.Data is first allocated with.
 func (r *Response) computeExpectedSize() int {
-	// Allocate output buffer on first decode call
-	// Use size from headers, capped at yencMaxPartSize for safety
 	base := r.Metadata.PartSize
 	if base <= 0 {
 		base = r.Metadata.FileSize
 	}
 	// Clamp before the margin is added; a header size near MaxInt64 would
 	// overflow, and int(base) would truncate on a 32-bit platform
-	base = min(base, yencMaxPartSize)
+	base = min(base, yencMaxInitialAlloc)
 	expected := int(base) + 64 // small margin to see the end of yEnc data
 
 	expected = max(expected, yencMinBufferSize)
-	expected = min(expected, yencMaxPartSize)
+	expected = min(expected, yencMaxInitialAlloc)
 
 	return expected
 }
@@ -330,17 +348,23 @@ func (r *Response) ensureData(decoder *Decoder, buf []byte) []byte {
 	}
 }
 
-// grow extends r.Data to at least n capacity.
+// grow extends r.Data to at least n capacity, doubling unless the declared size
+// is within growJumpLimit of the current capacity.
 func (r *Response) grow(n int) {
-	if cap(r.Data) < n {
-		if n < 2*cap(r.Data) {
-			// Grow to 2x current capacity
-			n = 2 * cap(r.Data)
-		}
-		newData := append([]byte(nil), make([]byte, n)...)
-		i := copy(newData, r.Data)
-		r.Data = newData[:i]
+	if cap(r.Data) >= n {
+		return
 	}
+
+	// declared/growJumpLimit rather than growJumpLimit*cap, which would overflow
+	if declared := r.declaredSize(); declared > n && declared/growJumpLimit <= cap(r.Data) {
+		n = declared
+	} else if n < 2*cap(r.Data) {
+		n = 2 * cap(r.Data)
+	}
+
+	newData := append([]byte(nil), make([]byte, n)...)
+	i := copy(newData, r.Data)
+	r.Data = newData[:i]
 }
 
 func (r *Response) decodeYenc(decoder *Decoder, buf []byte) (consumed int, err error) {
