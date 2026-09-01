@@ -83,7 +83,7 @@ func TestEncoder(t *testing.T) {
 	err = w.Close()
 	require.NoError(t, err)
 
-	require.Equal(t, uint32(0xa623f24e), w.hash.Sum32())
+	require.Equal(t, uint32(0xa623f24e), w.crc)
 
 	// Decoder reads until NNTP ".\r\n"
 	encoded.WriteString(".\r\n")

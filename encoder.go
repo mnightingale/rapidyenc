@@ -3,12 +3,8 @@ package rapidyenc
 import (
 	"errors"
 	"fmt"
-	"hash"
-	"hash/crc32"
 	"io"
 	"sync"
-
-	"golang.org/x/sync/errgroup"
 )
 
 type Encoder struct {
@@ -16,7 +12,7 @@ type Encoder struct {
 	m        Meta
 	hWritten bool
 
-	hash       hash.Hash32
+	crc        uint32
 	lineLength int
 	raw        bool // Encode without yenc headers
 	column     int
@@ -25,8 +21,7 @@ type Encoder struct {
 	buf     []byte
 	endByte []byte
 
-	writeMu  sync.Mutex
-	hashErrs errgroup.Group
+	writeMu sync.Mutex
 }
 
 type EncoderOption func(*Encoder)
@@ -38,7 +33,6 @@ type EncoderOption func(*Encoder)
 func NewEncoder(w io.Writer, m Meta, opts ...EncoderOption) (e *Encoder, err error) {
 	e = &Encoder{
 		lineLength: 128,
-		hash:       crc32.NewIEEE(),
 		endByte:    make([]byte, 0, 1),
 	}
 
@@ -83,10 +77,9 @@ func (e *Encoder) Reset(w io.Writer, meta Meta) error {
 	e.w = w
 	e.m = meta
 	e.hWritten = false
-	e.hash.Reset()
+	e.crc = 0
 	e.endByte = e.endByte[:0]
 	e.processed = 0
-	e.hashErrs = errgroup.Group{}
 
 	return nil
 }
@@ -105,18 +98,7 @@ func (e *Encoder) Write(p []byte) (n int, err error) {
 
 	n = len(p)
 
-	e.hashErrs.Go(func() error {
-		if _, e := e.hash.Write(p); e != nil {
-			return e
-		}
-		return nil
-	})
-	defer func() {
-		// Other errors take priority
-		if hashErr := e.hashErrs.Wait(); err == nil {
-			err = hashErr
-		}
-	}()
+	e.crc = crcUpdate(e.crc, p)
 
 	if !e.raw {
 		if _, err := e.writeHeader(); err != nil {
@@ -184,7 +166,7 @@ func (e *Encoder) Close() error {
 	}
 
 	if !e.raw {
-		if _, err := fmt.Fprintf(e.w, "\r\n=yend size=%d part=%d pcrc32=%08x\r\n", e.m.PartSize, e.m.PartNumber, e.hash.Sum32()); err != nil {
+		if _, err := fmt.Fprintf(e.w, "\r\n=yend size=%d part=%d pcrc32=%08x\r\n", e.m.PartSize, e.m.PartNumber, e.crc); err != nil {
 			return err
 		}
 

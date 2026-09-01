@@ -333,7 +333,7 @@ func TestXZVERYenc(t *testing.T) {
 			require.NoError(t, err)
 			err = enc.Close()
 			require.NoError(t, err)
-			_, err = fmt.Fprintf(encoded, "\r\n=yend crc32=%08x\r\n.\r\n", enc.hash.Sum32())
+			_, err = fmt.Fprintf(encoded, "\r\n=yend crc32=%08x\r\n.\r\n", enc.crc)
 			require.NoError(t, err)
 
 			dec := NewDecoder(bytes.NewReader(encoded.Bytes()))
