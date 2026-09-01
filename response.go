@@ -6,7 +6,6 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"hash/crc32"
 	"strconv"
 	"unicode"
 )
@@ -362,7 +361,7 @@ func (r *Response) decodeYenc(decoder *Decoder, buf []byte) (consumed int, err e
 	produced = len(decoded)
 	if produced > 0 {
 		r.Data = r.Data[:offset+produced]
-		r.Metadata.CRC = crc32.Update(r.Metadata.CRC, crc32.IEEETable, decoded)
+		r.Metadata.CRC = crcUpdate(r.Metadata.CRC, decoded)
 		r.Metadata.BytesProduced += int64(produced)
 	}
 
@@ -488,7 +487,7 @@ func (r *Response) decodeUU(line []byte) error {
 		if len(decoded) > 0 {
 			r.Data = append(r.Data, decoded...)
 			r.Metadata.BytesProduced += int64(len(decoded))
-			r.Metadata.CRC = crc32.Update(r.Metadata.CRC, crc32.IEEETable, decoded)
+			r.Metadata.CRC = crcUpdate(r.Metadata.CRC, decoded)
 		}
 	}
 
