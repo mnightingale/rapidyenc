@@ -14,23 +14,8 @@ var (
 )
 
 func init() {
-	const tableSize = 16
-	for i := range compactLUT {
-		k := i
-		p := 0
-		for j := range tableSize {
-			if (k & 1) == 0 {
-				compactLUT[i][p] = byte(j)
-				p++
-			}
-			k >>= 1
-		}
-		for ; p < tableSize; p++ {
-			compactLUT[i][p] = 0x80
-		}
-	}
-
 	if archsimd.X86.AVX2() {
+		initAVX2()
 		decodeIncremental = decodeAVX2
 		decoderKernel = "AVX2"
 	} else {
@@ -54,7 +39,26 @@ var (
 	broadcastFF                                                     archsimd.Uint8x32
 )
 
-func init() {
+// initAVX2 builds the tables and vector constants used by the AVX2 kernel.
+// Only call it when AVX2 is available: constructing the vectors below emits
+// VEX-encoded instructions that fault on pre-AVX CPUs.
+func initAVX2() {
+	const tableSize = 16
+	for i := range compactLUT {
+		k := i
+		p := 0
+		for j := range tableSize {
+			if (k & 1) == 0 {
+				compactLUT[i][p] = byte(j)
+				p++
+			}
+			k >>= 1
+		}
+		for ; p < tableSize; p++ {
+			compactLUT[i][p] = 0x80
+		}
+	}
+
 	broadcastEscapeFirst = archsimd.LoadInt8x32([]int8{
 		-42 - 64, -42, -42, -42, -42, -42, -42, -42, -42, -42, -42, -42, -42, -42, -42, -42,
 		-42, -42, -42, -42, -42, -42, -42, -42, -42, -42, -42, -42, -42, -42, -42, -42,

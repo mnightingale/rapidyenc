@@ -13,6 +13,7 @@ var (
 
 func init() {
 	if archsimd.X86.AVX2() {
+		initAVX2Encoder()
 		encodeIncremental = encodeAVX2
 		encoderKernel = "AVX2"
 	} else {
@@ -38,7 +39,10 @@ type lookupsAVX2 struct {
 	expandMergemix [33 * 2][32]int8 // not used in AVX3
 }
 
-func init() {
+// initAVX2Encoder builds the tables and vector constants used by the AVX2
+// kernel. Only call it when AVX2 is available: constructing the vectors below
+// emits VEX-encoded instructions that fault on pre-AVX CPUs.
+func initAVX2Encoder() {
 	encoderLUT = lookupsAVX2{}
 
 	// fill eolLastChar table
