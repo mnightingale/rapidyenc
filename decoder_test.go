@@ -181,6 +181,7 @@ func BenchmarkDecoder(b *testing.B) {
 			return bufferPool.Get().([]byte)
 		}),
 	)
+	b.SetBytes(int64(len(raw)))
 	b.ResetTimer()
 	for b.Loop() {
 		response, err := dec.Next()
