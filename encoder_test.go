@@ -95,6 +95,40 @@ func TestEncoder(t *testing.T) {
 	require.Equal(t, raw, response.Data)
 }
 
+func TestEncoderResetRestoresLinePosition(t *testing.T) {
+	firstMeta := Meta{
+		FileName: "first.bin", FileSize: 1, PartSize: 1,
+		PartNumber: 1, TotalParts: 1,
+	}
+	secondMeta := Meta{
+		FileName: "second.bin", FileSize: 128, PartSize: 128,
+		PartNumber: 1, TotalParts: 1,
+	}
+
+	var discarded bytes.Buffer
+	enc, err := NewEncoder(&discarded, firstMeta)
+	require.NoError(t, err)
+	_, err = enc.Write([]byte{0})
+	require.NoError(t, err)
+	require.NoError(t, enc.Close())
+
+	payload := make([]byte, secondMeta.PartSize)
+	var reused bytes.Buffer
+	require.NoError(t, enc.Reset(&reused, secondMeta))
+	_, err = enc.Write(payload)
+	require.NoError(t, err)
+	require.NoError(t, enc.Close())
+
+	var fresh bytes.Buffer
+	freshEnc, err := NewEncoder(&fresh, secondMeta)
+	require.NoError(t, err)
+	_, err = freshEnc.Write(payload)
+	require.NoError(t, err)
+	require.NoError(t, freshEnc.Close())
+
+	require.Equal(t, fresh.Bytes(), reused.Bytes())
+}
+
 func BenchmarkEncoder(b *testing.B) {
 	raw := make([]byte, 1024*1024)
 	_, err := rand.Read(raw)

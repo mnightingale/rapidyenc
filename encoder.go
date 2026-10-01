@@ -79,6 +79,7 @@ func (e *Encoder) Reset(w io.Writer, meta Meta) error {
 	e.hWritten = false
 	e.crc = 0
 	e.endByte = e.endByte[:0]
+	e.column = 0
 	e.processed = 0
 
 	return nil
