@@ -6,13 +6,29 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"io"
+	"math"
 	"strconv"
 	"unicode"
 )
 
 type Response struct {
-	Metadata     ResponseMeta
-	Data         []byte
+	Metadata ResponseMeta
+	// Data holds the decoded payload. It stays nil when the response was streamed
+	// to a sink given to Decoder.Expect instead.
+	Data []byte
+	// Request is the value passed to Decoder.Expect for the request this answers,
+	// or nil when Expect was not used.
+	Request any
+	// SinkFailed reports that a write to the sink failed, so the body was decoded
+	// but not kept. The response was still read to its end, so the connection is
+	// usable; the article has to be fetched again.
+	SinkFailed bool
+	// SinkError is the error the failed write returned, held rather than returned
+	// from Next so the response could be read to its end first.
+	SinkError    error
+	sink         io.Writer   // sequential sink, nil unless sinkAt is
+	sinkAt       io.WriterAt // positional sink
 	state        State
 	eof          bool
 	body         bool
@@ -278,24 +294,41 @@ func isMultiline(code int) bool {
 }
 
 const (
-	yencMaxPartSize   = 10 * 1024 * 1024 // 10 MiB
-	yencMinBufferSize = 1024
+	yencMaxInitialAlloc = 10 * 1024 * 1024 // 10 MiB
+	yencMinBufferSize   = 1024
+
+	// How far past the current capacity a declared size may be and still be
+	// allocated in one step
+	growJumpLimit = 8
 )
 
+// declaredSize is the payload size the yEnc headers claim, plus a small margin
+// to see the end of the yEnc data, or 0 when the headers do not say or the size
+// is too large for the margin and int(base) not to overflow.
+func (r *Response) declaredSize() int {
+	base := r.Metadata.PartSize
+	if base <= 0 {
+		base = r.Metadata.FileSize
+	}
+	if base <= 0 || base > math.MaxInt-64 {
+		return 0
+	}
+	return int(base) + 64
+}
+
+// computeExpectedSize is the capacity r.Data is first allocated with.
 func (r *Response) computeExpectedSize() int {
-	// Allocate output buffer on first decode call
-	// Use size from headers, capped at yencMaxPartSize for safety
 	base := r.Metadata.PartSize
 	if base <= 0 {
 		base = r.Metadata.FileSize
 	}
 	// Clamp before the margin is added; a header size near MaxInt64 would
 	// overflow, and int(base) would truncate on a 32-bit platform
-	base = min(base, yencMaxPartSize)
+	base = min(base, yencMaxInitialAlloc)
 	expected := int(base) + 64 // small margin to see the end of yEnc data
 
 	expected = max(expected, yencMinBufferSize)
-	expected = min(expected, yencMaxPartSize)
+	expected = min(expected, yencMaxInitialAlloc)
 
 	return expected
 }
@@ -330,16 +363,50 @@ func (r *Response) ensureData(decoder *Decoder, buf []byte) []byte {
 	}
 }
 
-// grow extends r.Data to at least n capacity.
+// grow extends r.Data to at least n capacity, doubling unless the declared size
+// is within growJumpLimit of the current capacity.
 func (r *Response) grow(n int) {
-	if cap(r.Data) < n {
-		if n < 2*cap(r.Data) {
-			// Grow to 2x current capacity
-			n = 2 * cap(r.Data)
-		}
-		newData := append([]byte(nil), make([]byte, n)...)
-		i := copy(newData, r.Data)
-		r.Data = newData[:i]
+	if cap(r.Data) >= n {
+		return
+	}
+
+	// declared/growJumpLimit rather than growJumpLimit*cap, which would overflow
+	if declared := r.declaredSize(); declared > n && declared/growJumpLimit <= cap(r.Data) {
+		n = declared
+	} else if n < 2*cap(r.Data) {
+		n = 2 * cap(r.Data)
+	}
+
+	newData := append([]byte(nil), make([]byte, n)...)
+	i := copy(newData, r.Data)
+	r.Data = newData[:i]
+}
+
+// hasSink is whether the body goes to a sink rather than into r.Data.
+func (r *Response) hasSink() bool {
+	return r.sink != nil || r.sinkAt != nil
+}
+
+// writeSink hands decoded bytes to the sink.
+//
+// A failure is recorded rather than returned. Returning it would abandon the decoder
+// mid-response, leaving the rest of the article to be read as the start of the next
+// one, so one failed write would cost the whole connection instead of one article.
+// The response is read to its end with the body discarded instead.
+func (r *Response) writeSink(decoded []byte) {
+	if r.SinkFailed {
+		return
+	}
+
+	var err error
+	if r.sinkAt != nil {
+		_, err = r.sinkAt.WriteAt(decoded, r.Metadata.Offset+r.Metadata.BytesProduced)
+	} else {
+		_, err = r.sink.Write(decoded)
+	}
+	if err != nil {
+		r.SinkFailed = true
+		r.SinkError = err
 	}
 }
 
@@ -348,10 +415,15 @@ func (r *Response) decodeYenc(decoder *Decoder, buf []byte) (consumed int, err e
 		return 0, nil
 	}
 
-	buf = r.ensureData(decoder, buf)
-
-	offset := len(r.Data)
-	out := r.Data[offset : offset+len(buf)]
+	var offset int
+	var out []byte
+	if r.hasSink() {
+		out = decoder.decodeScratch(len(buf))
+	} else {
+		buf = r.ensureData(decoder, buf)
+		offset = len(r.Data)
+		out = r.Data[offset : offset+len(buf)]
+	}
 
 	var produced int
 	var decoded []byte
@@ -360,7 +432,11 @@ func (r *Response) decodeYenc(decoder *Decoder, buf []byte) (consumed int, err e
 	consumed, decoded, r.state, end, err = decodeIncremental(out, buf, r.state)
 	produced = len(decoded)
 	if produced > 0 {
-		r.Data = r.Data[:offset+produced]
+		if r.hasSink() {
+			r.writeSink(decoded)
+		} else {
+			r.Data = r.Data[:offset+produced]
+		}
 		r.Metadata.CRC = crcUpdate(r.Metadata.CRC, decoded)
 		r.Metadata.BytesProduced += int64(produced)
 	}

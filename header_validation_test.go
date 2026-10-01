@@ -45,9 +45,9 @@ func TestExpectedSizeClamped(t *testing.T) {
 		{0, 0, yencMinBufferSize},
 		{-1, -1, yencMinBufferSize},
 		{1 << 20, 0, 1<<20 + 64},
-		{1 << 40, 0, yencMaxPartSize},
-		{math.MaxInt64, 0, yencMaxPartSize},
-		{0, math.MaxInt64, yencMaxPartSize},
+		{1 << 40, 0, yencMaxInitialAlloc},
+		{math.MaxInt64, 0, yencMaxInitialAlloc},
+		{0, math.MaxInt64, yencMaxInitialAlloc},
 	}
 
 	for _, tc := range cases {
