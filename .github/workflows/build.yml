@@ -4,6 +4,7 @@ on:
   push:
     paths:
       - 'src/**'
+      - 'rapidyenc'
       - '.github/workflows/build.yml'
       - 'Makefile'
 
