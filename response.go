@@ -217,7 +217,7 @@ func (r *Response) detectFormat(decoder *Decoder, line []byte) {
 		decodeUUCharWorkaround(first),
 		decodeUUChar(first),
 	} {
-		if n < length {
+		if length < 1 || n < length {
 			continue
 		}
 
